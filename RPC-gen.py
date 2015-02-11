@@ -151,8 +151,8 @@ class ArrayDatatype(Datatype):
             return """
 {3}/* writing array {0} with {2} elements */
 {3}{{
-{3}\tint i{5};
-{3}\tfor (i{5} = 0; i{5} < {2}; i{5}++){{
+{3}\tint RPC_COUNTER_VAR{5};
+{3}\tfor (RPC_COUNTER_VAR{5} = 0; RPC_COUNTER_VAR{5} < {2}; RPC_COUNTER_VAR{5}++){{
 {4}
 {3}\t}}
 {3}}}""".format(
@@ -160,7 +160,7 @@ class ArrayDatatype(Datatype):
     None, #1
     self.numberOfElements, #2
     indention * '\t', #3
-    self.datatype.stringify(destination, "" + identifier + "[i{0}]".format(indention), indention + 2), #4
+    self.datatype.stringify(destination, "" + identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2), #4
     indention, #5
     )
         else:
@@ -170,8 +170,8 @@ class ArrayDatatype(Datatype):
         return """
 {3}/* reading array {0} with {2} elements */
 {3}{{
-{3}\tint i;
-{3}\tfor (i = 0; i < {2}; i++){{
+{3}\tint RPC_COUNTER_VAR;
+{3}\tfor (RPC_COUNTER_VAR = 0; RPC_COUNTER_VAR < {2}; RPC_COUNTER_VAR++){{
 {4}
 {3}\t}}
 {3}}}""".format(
@@ -179,7 +179,7 @@ class ArrayDatatype(Datatype):
     None, #1
     self.numberOfElements, #2
     indention * '\t', #3
-    self.datatype.unstringify(destination, identifier + "[i]", indention + 2), #4
+    self.datatype.unstringify(destination, identifier + "[RPC_COUNTER_VAR]", indention + 2), #4
     )
 
 class PointerDatatype(Datatype):
@@ -560,7 +560,7 @@ def generateCode(file):
     hfile = "".join(f.getDeclaration() for f in functionlist) + "\n"
     return hfile, cfile
     
-hfile, cfile = generateCode("Testdata/simpletest.h")
+hfile, cfile = generateCode("Testdata/oneDimensionalArrayTest.h")
 #hfile, cfile = generateCode("test.h")
 print(hfile, cfile)
 print(len(hfile) + len(cfile), len(hfile.split("\n")) + len(cfile.split("\n")))
