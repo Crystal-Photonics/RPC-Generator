@@ -141,7 +141,7 @@ class ArrayDatatype(Datatype):
         self.In = parametername.endswith("_in") or parametername.endswith("_inout")
         self.Out = parametername.endswith("_out") or parametername.endswith("_inout")
     def declaration(self, identifier):
-        return self.datatype.declaration(identifier) + "[" + str(self.numberOfElements) + "]"
+        return self.datatype.declaration(identifier + "[" + str(self.numberOfElements) + "]")
     def isInput(identifier):
         return identifier.endswith("in") or identifier.endswith("inout")
     def isOutput(identifier):
@@ -168,7 +168,7 @@ class ArrayDatatype(Datatype):
 {0}/*Skipping array "{1}", because it is not an input parameter*/""".format(indention * '\t', identifier)
     def unstringify(self, destination, identifier, indention):
         if not ArrayDatatype.isOutput(identifier):
-            return '{0}/*Skipping array "{1}, because it is not an output parameter*/'.format(
+            return '\n{0}/*Skipping array "{1}, because it is not an output parameter*/'.format(
                 indention * '\t', #0
                 identifier
                 )
