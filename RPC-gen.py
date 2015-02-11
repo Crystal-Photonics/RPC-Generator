@@ -74,6 +74,8 @@ class BasicDatatype(Datatype):
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
             return ""
+        if identifier[-1] != ']':
+            return ""
         return """
 {0}/* reading basic type {3} {1} of size {4} */
 {0}memcpy(&{1}, {2}, {4});
@@ -112,6 +114,8 @@ class BasicTransferDatatype(Datatype):
     )
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
+            return ""
+        if identifier[-1] != ']':
             return ""
         return """
 {0}/* reading basic type {3}{1} of size {4} */
@@ -499,10 +503,10 @@ def setTypes(ast):
 
 def getNonstandardTypedefs():
     return "#include <stdint.h>\n" + "".join((
-        "".join("typedef int8_t int{0}_t;\n".format(i) for i in range(1, 8)),
-        "".join("typedef int16_t int{0}_t;\n".format(i) for i in range(9, 16)),
-        "".join("typedef int32_t int{0}_t;\n".format(i) for i in range(17, 32)),
-        "".join("typedef uint8_t uint{0}_t;\n".format(i) for i in range(1, 8)),
+        "".join("typedef   int8_t  int{0}_t;\n".format(i) for i in range(1, 8)),
+        "".join("typedef  int16_t  int{0}_t;\n".format(i) for i in range(9, 16)),
+        "".join("typedef  int32_t  int{0}_t;\n".format(i) for i in range(17, 32)),
+        "".join("typedef  uint8_t uint{0}_t;\n".format(i) for i in range(1, 8)),
         "".join("typedef uint16_t uint{0}_t;\n".format(i) for i in range(9, 16)),
         "".join("typedef uint32_t uint{0}_t;\n".format(i) for i in range(17, 32)),
         ))
@@ -556,7 +560,7 @@ def generateCode(file):
     hfile = "".join(f.getDeclaration() for f in functionlist) + "\n"
     return hfile, cfile
     
-hfile, cfile = generateCode("Testdata/mintest.h")
+hfile, cfile = generateCode("Testdata/simpletest.h")
 #hfile, cfile = generateCode("test.h")
 print(hfile, cfile)
 print(len(hfile) + len(cfile), len(hfile.split("\n")) + len(cfile.split("\n")))
