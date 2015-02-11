@@ -145,7 +145,7 @@ class ArrayDatatype(Datatype):
     def isInput(identifier):
         return identifier.endswith("in") or identifier.endswith("inout")
     def isOutput(identifier):
-        return identifier.endswith("out") or identifier.endswith("inout")
+        return identifier.endswith("out") or identifier.endswith("inout") or identifier.endswith(']')
     def stringify(self, destination, identifier, indention):
         if self.In:
             return """
@@ -175,8 +175,8 @@ class ArrayDatatype(Datatype):
         return """
 {3}/* reading array {0} with {2} elements */
 {3}{{
-{3}\tint RPC_COUNTER_VAR;
-{3}\tfor (RPC_COUNTER_VAR = 0; RPC_COUNTER_VAR < {2}; RPC_COUNTER_VAR++){{
+{3}\tint RPC_COUNTER_VAR{5};
+{3}\tfor (RPC_COUNTER_VAR{5} = 0; RPC_COUNTER_VAR{5} < {2}; RPC_COUNTER_VAR{5}++){{
 {4}
 {3}\t}}
 {3}}}""".format(
@@ -184,7 +184,8 @@ class ArrayDatatype(Datatype):
     None, #1
     self.numberOfElements, #2
     indention * '\t', #3
-    self.datatype.unstringify(destination, identifier + "[RPC_COUNTER_VAR]", indention + 2), #4
+    self.datatype.unstringify(destination, identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2), #4
+    indention, #5
     )
 
 class PointerDatatype(Datatype):
