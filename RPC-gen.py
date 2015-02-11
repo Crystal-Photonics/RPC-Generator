@@ -167,6 +167,11 @@ class ArrayDatatype(Datatype):
             return """
 {0}/*Skipping array "{1}", because it is not an input parameter*/""".format(indention * '\t', identifier)
     def unstringify(self, destination, identifier, indention):
+        if not ArrayDatatype.isOutput(identifier):
+            return '{0}/*Skipping array "{1}, because it is not an output parameter*/'.format(
+                indention * '\t', #0
+                identifier
+                )
         return """
 {3}/* reading array {0} with {2} elements */
 {3}{{
