@@ -145,7 +145,7 @@ class ArrayDatatype(Datatype):
     def isInput(identifier):
         return identifier.endswith("in") or identifier.endswith("inout")
     def isOutput(identifier):
-        return identifier.endswith("in") or identifier.endswith("inout")
+        return identifier.endswith("out") or identifier.endswith("inout")
     def stringify(self, destination, identifier, indention):
         if self.In:
             return """
@@ -565,7 +565,7 @@ def generateCode(file):
     hfile = "".join(f.getDeclaration() for f in functionlist) + "\n"
     return hfile, cfile
     
-hfile, cfile = generateCode("Testdata/oneDimensionalArrayTest.h")
+hfile, cfile = generateCode("Testdata/multiDimensionalArrayTest.h")
 #hfile, cfile = generateCode("test.h")
 print(hfile, cfile)
 print(len(hfile) + len(cfile), len(hfile.split("\n")) + len(cfile.split("\n")))
