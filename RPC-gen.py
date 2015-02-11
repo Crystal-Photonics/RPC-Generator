@@ -1,3 +1,8 @@
+# Source Header ->
+# - RPC header
+# - RPC implementation
+# - requestParser implementation
+
 import sys
 import CppHeaderParser
 from copy import deepcopy
@@ -307,6 +312,16 @@ class Function:
             self.name, #0
             self.getParameterDeclaration(), #1
             )
+    def getRequestParseCase(self, buffer):
+        return """
+\t\tcase {0}:
+\t\t{{
+{1}
+\t\t}}
+\t\tbreak;""".format(
+    self.ID * 2, #0
+    "".join(p[0].unstringify(buffer, p[1], 3) for p in self.parameterlist), #1
+    )
 
 def setBasicDataType(signature, size_bytes):
     datatypes[signature] = BasicDatatype(signature, size_bytes)
@@ -455,6 +470,7 @@ def getFunction(function):
     functionList = []
     try:
         getFunction.functionID += 1
+        assert getFunction.functionID < 255, "Too many functions, require changes to allow bigger function ID variable"
     except AttributeError:
         getFunction.functionID = 1
     #for attribute in function:
@@ -528,6 +544,17 @@ typedef enum{{RPC_FAILURE, RPC_SUCCESS}} RPC_RESULT;
 /* The optional original return value is returned through the first parameter */
 """.format(version, getNonstandardTypedefs())
 
+def getParser(functions):
+    buffername = "buffer"
+    return """
+void RPC_parse(const char *{1}, unsigned int size){{
+\tswitch ((unsigned char)*buffer){{{0}
+\t}}
+}}""".format(
+    "".join(f.getRequestParseCase(buffername) for f in functions), #0
+    buffername, #1
+    )
+
 def generateCode(file):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
@@ -562,14 +589,15 @@ def generateCode(file):
     functionlist = []
     for f in ast.functions:
         functionlist.append(getFunction(f))
-    cfile = "".join(f.getDefinition("sendBuffer", "send", 0) for f in functionlist) + "\n"
-    hfile = "".join(f.getDeclaration() for f in functionlist) + "\n"
-    return hfile, cfile
+    rpcHeader = "".join(f.getDeclaration() for f in functionlist) + "\n"
+    rpcImplementation = "".join(f.getDefinition("sendBuffer", "send", 0) for f in functionlist) + "\n"
+    parserImplementation = getParser(functionlist)
+    return rpcHeader, rpcImplementation, parserImplementation
     
-hfile, cfile = generateCode("Testdata/multiDimensionalArrayTest.h")
-#hfile, cfile = generateCode("test.h")
-print(hfile, cfile)
-print(len(hfile) + len(cfile), len(hfile.split("\n")) + len(cfile.split("\n")))
+rpcHeader, rpcImplementation, parserImplementation = generateCode("Testdata/multiDimensionalArrayTest.h")
+#rpcHeader, rpcImplementation = generateCode("test.h")
+print(rpcHeader, rpcImplementation, parserImplementation)
+#print(len(rpcHeader) + len(rpcImplementation), len(rpcHeader.split("\n")) + len(rpcImplementation.split("\n")))
 #print(" ".join(f["name"] for f in cppHeader.functions))
 
 
