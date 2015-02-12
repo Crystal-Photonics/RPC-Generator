@@ -152,8 +152,7 @@ class ArrayDatatype(Datatype):
     def isOutput(identifier):
         return identifier.endswith("out") or identifier.endswith("inout") or identifier.endswith(']')
     def stringify(self, destination, identifier, indention):
-        if self.In:
-            return """
+        return """
 {3}/* writing array {0} with {2} elements */
 {3}{{
 {3}\tint RPC_COUNTER_VAR{5};
@@ -168,15 +167,7 @@ class ArrayDatatype(Datatype):
     self.datatype.stringify(destination, "" + identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2), #4
     indention, #5
     )
-        else:
-            return """
-{0}/*Skipping array "{1}", because it is not an input parameter*/""".format(indention * '\t', identifier)
     def unstringify(self, destination, identifier, indention):
-        if not ArrayDatatype.isOutput(identifier):
-            return '\n{0}/*Skipping array "{1}, because it is not an output parameter*/'.format(
-                indention * '\t', #0
-                identifier
-                )
         return """
 {3}/* reading array {0} with {2} elements */
 {3}{{
@@ -206,8 +197,7 @@ class PointerDatatype(Datatype):
     def setNumberOfElementsIdentifier(self, numberOfElementsIdentifier):
         self.numberOfElementsIdentifier = numberOfElementsIdentifier
     def stringify(self, destination, identifier, indention):
-        if self.In:
-            return """
+        return """
 {3}/* writing pointer {1}{0} with [{2}] elements*/
 {3}{{
 {3}\tint i;
@@ -221,9 +211,6 @@ class PointerDatatype(Datatype):
     indention * '\t', #3
     self.datatype.stringify(destination, identifier + "[i]", indention + 2) #4
     )
-        else:
-            return """
-{0}/*Skipping pointer "{1}", because it is not an input parameter*/""".format(indention * '\t', identifier)
     def unstringify(self, destination, identifier, indention):
         return """
 {3}/* reading pointer {1}{0} with [{2}] elements*/
@@ -272,13 +259,14 @@ class Function:
         if not isVoidDatatype(returntype):
             returnValueName = "return_value_out"
             rt = ArrayDatatype(1, returntype, returnValueName)
-            parameterlist.insert(0, (rt, returnValueName))
+            parameterlist.insert(0, {"parameter":rt, "parametername":returnValueName})
         self.name = name
         self.parameterlist = parameterlist
         #print(10*'+' + '\n' + "".join(str(p) for p in parameterlist) + '\n' + 10*'-' + '\n')
         self.ID = ID
     def getParameterDeclaration(self):
-        parameterdeclaration = ", ".join(p[0].declaration(p[1]) for p in self.parameterlist)
+        print(self.parameterlist)
+        parameterdeclaration = ", ".join(p["parameter"].declaration(p["parametername"]) for p in self.parameterlist)
         if parameterdeclaration == "":
             parameterdeclaration = "void"
         return parameterdeclaration
@@ -301,11 +289,11 @@ class Function:
     indention * '\t', #0
     destination, #1
     self.ID * 2, #2
-    "".join(p[0].stringify("current", p[1], indention + 1) for p in self.parameterlist), #3
+    "".join(p["parameter"].stringify("current", p["parametername"], indention + 1) for p in self.parameterlist), #3 # if p.isInput()
     sendFunction, #4
     self.name, #5
     self.getParameterDeclaration(), #6
-    "".join(p[0].unstringify("current", p[1], indention + 1) for p in self.parameterlist), #7
+    "".join(p["parameter"].unstringify("current", p["parametername"], indention + 1) for p in self.parameterlist), #7 # if p.isOutput()
     )
     def getDeclaration(self):
         return "RPC_RESULT {0}({1});".format(
@@ -320,7 +308,7 @@ class Function:
 \t\t}}
 \t\tbreak;""".format(
     self.ID * 2, #0
-    "".join(p[0].unstringify(buffer, p[1], 3) for p in self.parameterlist), #1
+    "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist), #1
     )
 
 def setBasicDataType(signature, size_bytes):
@@ -427,7 +415,7 @@ def getFunctionParameter(parameter):
         assert parameter["type"][-3] != '*', "Multipointer as parameter is not allowed"
         assert parameter["name"].endswith("_in") or parameter["name"].endswith("_out") or parameter["name"].endswith("_inout"),\
                'In {1}:{2}: Pointer parameter "{0}" must either have a suffix "_in", "_out", "_inout" or be a fixed size array.'.format(parameter["name"], currentFile, parameter["line_number"])
-        return True, PointerDatatype(parameter["type"], getDatatype(parameter["type"][:-2], currentFile, parameter["line_number"]), parameter["name"])
+        return {"isPointerRequiringSize":True, "parameter":PointerDatatype(parameter["type"], getDatatype(parameter["type"][:-2], currentFile, parameter["line_number"]), parameter["name"])}
     basetype = getDatatype(parameter["type"], currentFile, parameter["line_number"])
     if parameter["array"]: #array
         assert parameter["name"][-3:] == "_in" or parameter["name"][-4:] == "_out" or parameter["name"][-6:] == "_inout", 'Array parameter name "' + parameter["name"] + '" must end with "_in", "_out" or "_inout"'
@@ -436,9 +424,9 @@ def getFunctionParameter(parameter):
         arraySizes = arraySizes[1:]
         for arraySize in arraySizes:
             current = ArrayDatatype(arraySize, current, parameter["name"])
-        return False, current
+        return {"isPointerRequiringSize":False, "parameter":current}
     else: #base type
-        return False, basetype
+        return {"isPointerRequiringSize":False, "parameter":basetype}
 
 def getFunctionParameterList(parameters):
     paramlist = []
@@ -449,18 +437,22 @@ def getFunctionParameterList(parameters):
             pointersizename = p["name"]
             sizeParameterErrorText = 'Pointer parameter "{0}" must be followed by a size parameter with the name "{0}_size". Or use a fixed size array instead.'.format(pointername)
             assert pointersizename == pointername + "_size", sizeParameterErrorText
-            isPointerRequiringSize, parameter = getFunctionParameter(p)
+            functionparameter = getFunctionParameter(p)
+            isPointerRequiringSize = functionparameter["isPointerRequiringSize"]
+            parameter = functionparameter["parameter"]
             assert not isPointerRequiringSize, sizeParameterErrorText
-            paramlist[-1][0].setNumberOfElementsIdentifier(pointersizename)
-            paramlist.append((parameter, p["name"]))
+            paramlist[-1]["parameter"].setNumberOfElementsIdentifier(pointersizename)
+            paramlist.append({"parameter":parameter, "parametername":p["name"]})
         else:
-            isPointerRequiringSize, parameter = getFunctionParameter(p)
+            functionparameter = getFunctionParameter(p)
+            isPointerRequiringSize = functionparameter["isPointerRequiringSize"]
+            parameter = functionparameter["parameter"]
             if isVoidDatatype(parameter):
                 continue
             parametername = p["name"]
             if parametername == "" and p["type"] != 'void':
                 parametername = "unnamed_parameter" + str(len(paramlist))
-            paramlist.append((parameter, parametername))
+            paramlist.append({"parameter":parameter, "parametername":parametername})
     assert not isPointerRequiringSize, 'Pointer parameter "{0}" must be followed by a size parameter with the name "{0}_size". Or use a fixed size array instead.'.format(parameters[len(paramlist) - 1]["name"])
     #for p in paramlist:
     #    print(p.stringify("buffer", "var", 1))
@@ -594,9 +586,13 @@ def generateCode(file):
     parserImplementation = getParser(functionlist)
     return rpcHeader, rpcImplementation, parserImplementation
     
-rpcHeader, rpcImplementation, parserImplementation = generateCode("Testdata/multiDimensionalArrayTest.h")
+rpcHeader, rpcImplementation, parserImplementation = generateCode("Testdata/simpleTest.h")
 #rpcHeader, rpcImplementation = generateCode("test.h")
-print(rpcHeader, rpcImplementation, parserImplementation)
+for name, data in (("rpcHeader", rpcHeader), ("rpcImplementation", rpcImplementation), ("parserImplementation", parserImplementation)):
+    print(10*'-'+name+10*'-')
+    print(data)
+#print(rpcHeader, rpcImplementation, parserImplementation)
+#print(parserImplementation)
 #print(len(rpcHeader) + len(rpcImplementation), len(rpcHeader.split("\n")) + len(rpcImplementation.split("\n")))
 #print(" ".join(f["name"] for f in cppHeader.functions))
 
