@@ -55,6 +55,17 @@ class Datatype:
         #indention is the indention level of the code
         #returns code that does the unstringifying
         raise NotImplemented
+    def isInput(self, identifier):
+        #returns True if this is an input parameter when passed to a function and False otherwise
+        #pointers and arrays may be pure output parameters, integers are always input parameters
+        #if pointers and arrays are input parameters depends on their identifier name
+        raise NotImplemented
+    def isOutput(self, identifier):
+        #returns True if this is an output parameter when passed to a function and False otherwise
+        #pointers and arrays can be output parameters, integers can never be output parameters
+        #if pointers and arrays are output parameters depends on their identifier name
+        raise NotImplemented
+        
 
 class BasicDatatype(Datatype):
     #simple memcpy
@@ -79,8 +90,6 @@ class BasicDatatype(Datatype):
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
             return ""
-        if identifier[-1] != ']':
-            return ""
         return """
 {0}/* reading basic type {3} {1} of size {4} */
 {0}memcpy(&{1}, {2}, {4});
@@ -91,6 +100,10 @@ class BasicDatatype(Datatype):
     self.signature, #3
     self.size_bytes, #4
     )
+    def isInput(self, identifier):
+        return True
+    def isOutput(self, identifier):
+        return False
 
 class BasicTransferDatatype(Datatype):
     #copy to temp and then memcpy
@@ -137,6 +150,10 @@ class BasicTransferDatatype(Datatype):
     self.size_bytes, #4
     self.transfertype, #5
     )
+    def isInput(self, identifier):
+        return True
+    def isOutput(self, identifier):
+        return False
 
 class ArrayDatatype(Datatype):
     #need to be mindful of padding, otherwise it is a fixed size loop
@@ -147,9 +164,9 @@ class ArrayDatatype(Datatype):
         self.Out = parametername.endswith("_out") or parametername.endswith("_inout")
     def declaration(self, identifier):
         return self.datatype.declaration(identifier + "[" + str(self.numberOfElements) + "]")
-    def isInput(identifier):
+    def isInput(self, identifier):
         return identifier.endswith("in") or identifier.endswith("inout")
-    def isOutput(identifier):
+    def isOutput(self, identifier):
         return identifier.endswith("out") or identifier.endswith("inout") or identifier.endswith(']')
     def stringify(self, destination, identifier, indention):
         return """
@@ -226,6 +243,10 @@ class PointerDatatype(Datatype):
     indention * '\t', #3
     self.datatype.unstringify(destination, identifier + "[i]", indention + 2) #4
     )
+    def isInput(self, identifier):
+        return self.In
+    def isOutput(self, identifier):
+        return self.Out
 
 class StructDatatype(Datatype):
     #just call the functions of all the members in order
@@ -248,6 +269,12 @@ class StructDatatype(Datatype):
             identifier, #4
             memberStringification, #5
             )
+    def isInput(self, identifier):
+        #TODO: Go through members and return if for any of them isInput is true
+        raise NotImplemented
+    def isOutput(self, identifier):
+        #TODO: Go through members and return if for any of them isOutput is true
+        raise NotImplemented
 
 class Function:
     #stringify turns a function call into a string and sends it to the other side
@@ -265,18 +292,20 @@ class Function:
         #print(10*'+' + '\n' + "".join(str(p) for p in parameterlist) + '\n' + 10*'-' + '\n')
         self.ID = ID
     def getParameterDeclaration(self):
-        print(self.parameterlist)
         parameterdeclaration = ", ".join(p["parameter"].declaration(p["parametername"]) for p in self.parameterlist)
         if parameterdeclaration == "":
             parameterdeclaration = "void"
         return parameterdeclaration
     def getDefinition(self, destination, sendFunction, indention):
+        #print(self.parameterlist)
         return """
 {0}RPC_RESULT {5}({6}){{
 {0}\t/***Serializing***/
 {0}\tchar *current = {1};
 {0}\t*current++ = {2}; /* save ID */
 {3}
+
+{0}\t/***Kommunication***/
 {0}\t{4}(start, current - {1});
 {0}\tif (!(RPC_SLEEP()))
 {0}\t\treturn RPC_FAILURE;
@@ -289,11 +318,11 @@ class Function:
     indention * '\t', #0
     destination, #1
     self.ID * 2, #2
-    "".join(p["parameter"].stringify("current", p["parametername"], indention + 1) for p in self.parameterlist), #3 # if p.isInput()
+    "".join(p["parameter"].stringify("current", p["parametername"], indention + 1) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])), #3
     sendFunction, #4
     self.name, #5
     self.getParameterDeclaration(), #6
-    "".join(p["parameter"].unstringify("current", p["parametername"], indention + 1) for p in self.parameterlist), #7 # if p.isOutput()
+    "".join(p["parameter"].unstringify("current", p["parametername"], indention + 1) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])), #7
     )
     def getDeclaration(self):
         return "RPC_RESULT {0}({1});".format(
@@ -303,12 +332,14 @@ class Function:
     def getRequestParseCase(self, buffer):
         return """
 \t\tcase {0}:
+\t\t/* {2} */
 \t\t{{
 {1}
 \t\t}}
 \t\tbreak;""".format(
     self.ID * 2, #0
-    "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist), #1
+    "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])), #1
+    self.getDeclaration()
     )
 
 def setBasicDataType(signature, size_bytes):
@@ -586,7 +617,7 @@ def generateCode(file):
     parserImplementation = getParser(functionlist)
     return rpcHeader, rpcImplementation, parserImplementation
     
-rpcHeader, rpcImplementation, parserImplementation = generateCode("Testdata/simpleTest.h")
+rpcHeader, rpcImplementation, parserImplementation = generateCode("Testdata/oneDimensionalArrayTest.h")
 #rpcHeader, rpcImplementation = generateCode("test.h")
 for name, data in (("rpcHeader", rpcHeader), ("rpcImplementation", rpcImplementation), ("parserImplementation", parserImplementation)):
     print(10*'-'+name+10*'-')
