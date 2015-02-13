@@ -73,11 +73,11 @@ class IntegralDatatype(Datatype):
         if number == 0:
             return "{0}".format(identifier)
         elif number < 2:
-            return "({0} / {1}) % 256".format(identifier, 2 ** (8 * number))
+            return "{0} >> {1}".format(identifier, 8 * number)
         elif number < 4:
-            return "({0} / {1}L) % 256".format(identifier, 2 ** (8 * number))
+            return "{0} >> {1}".format(identifier, 8 * number)
         elif number < 8:
-            return "({0} / {1}LL) % 256".format(identifier, 2 ** (8 * number))
+            return "{0} >> {1}".format(identifier, 8 * number)
     def orByte(number, identifier, source):
         assert number < 8, "Do not know how to portably deal with integers bigger than 64 bit"
         if number == 0:
@@ -227,6 +227,9 @@ class ArrayDatatype(Datatype):
     def isOutput(self, identifier):
         return identifier.endswith("out") or identifier.endswith("inout") or identifier.endswith(']')
     def stringify(self, destination, identifier, indention):
+        if self.numberOfElements == "1":
+            #no loop required for 1 element
+            return "{0}{1}".format(indention * '\t', self.datatype.stringify(destination, "*" + identifier, indention))
         return """
 {3}/* writing array {0} with {2} elements */
 {3}{{
@@ -243,6 +246,9 @@ class ArrayDatatype(Datatype):
     indention, #5
     )
     def unstringify(self, destination, identifier, indention):
+        if self.numberOfElements == "1":
+            #no loop required for 1 element
+            return "{0}{1}".format(indention * '\t', self.datatype.unstringify(destination, "*" + identifier, indention))
         return """
 {3}/* reading array {0} with {2} elements */
 {3}{{
@@ -343,7 +349,7 @@ class Function:
         #returntype can either be a Datatype "void", but no pointer
         if not isVoidDatatype(returntype):
             returnValueName = "return_value_out"
-            rt = ArrayDatatype(1, returntype, returnValueName)
+            rt = ArrayDatatype("1", returntype, returnValueName)
             parameterlist.insert(0, {"parameter":rt, "parametername":returnValueName})
         self.name = name
         self.parameterlist = parameterlist
@@ -363,7 +369,7 @@ class Function:
 {0}\t*current++ = {2}; /* save ID */
 {3}
 
-{0}\t/***Kommunication***/
+{0}\t/***Communication***/
 {0}\t{4}(start, current - {1});
 {0}\tif (!(RPC_SLEEP()))
 {0}\t\treturn RPC_FAILURE;
@@ -389,15 +395,24 @@ class Function:
             )
     def getRequestParseCase(self, buffer):
         return """
-\t\tcase {0}:
-\t\t/* {2} */
+\t\tcase {0}: /* {1} */
 \t\t{{
-{1}
+\t\t/***Declarations***/
+{2}
+\t\t/***Read input parameters***/
+{3}
+\t\t/***Call function***/
+\t\t\t{4}
+\t\t/***send return value and output parameters***/
+\t\t\t{5}
 \t\t}}
 \t\tbreak;""".format(
     self.ID * 2, #0
-    "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])), #1
-    self.getDeclaration()
+    self.getDeclaration(), #1
+    "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist), #2 #declaring parameters
+    "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])), #3 #deserializing input parameters
+    "//TODO", #4 #call function
+    "//TODO", #5 #send answer
     )
 
 def setIntegralDataType(signature, size_bytes):
