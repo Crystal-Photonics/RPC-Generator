@@ -67,6 +67,64 @@ class Datatype:
         raise NotImplemented
         
 
+class IntegralDatatype(Datatype):
+    def getByte(number, identifier):
+        assert number < 8, "Do not know how to portably deal with integers bigger than 64 bit"
+        if number == 0:
+            return "{0}".format(identifier)
+        elif number < 2:
+            return "({0} / {1}) % 256".format(identifier, 2 ** (8 * number))
+        elif number < 4:
+            return "({0} / {1}L) % 256".format(identifier, 2 ** (8 * number))
+        elif number < 8:
+            return "({0} / {1}LL) % 256".format(identifier, 2 ** (8 * number))
+    def orByte(number, identifier, source):
+        assert number < 8, "Do not know how to portably deal with integers bigger than 64 bit"
+        if number == 0:
+            return "{0} |= {1}".format(identifier, source)
+        elif number < 2:
+            return "{0} |= {1} << {2}".format(identifier, source, 8 * number)
+        elif number < 4:
+            return "{0} |= {1} << {2}L".format(identifier, source, 8 * number)
+        elif number < 8:
+            return "{0} |= {1} << {2}LL".format(identifier, source, 8 * number)
+    #use mod and divide to prevent endianess problems
+    def __init__(self, signature, size_bytes):
+        self.signature = signature
+        self.size_bytes = size_bytes
+    def declaration(self, identifier):
+        return self.signature + " " + identifier
+    def stringify(self, destination, identifier, indention):
+        return """
+{0}/* writing integral type {3} {1} of size {4} */
+{5}""".format(
+    indention * '\t', #0
+    identifier, #1
+    destination, #2
+    self.signature, #3
+    self.size_bytes, #4
+    "".join(indention * '\t' + "*" + destination + "++ = " + IntegralDatatype.getByte(i, identifier) + ";\n" for i in range(self.size_bytes)), #5
+    )
+    def unstringify(self, source, identifier, indention):
+        if self.size_bytes == 0:
+            return ""
+        return """
+{0}/* reading integral type {3} {1} of size {4} */
+{0}{1} = {2}++;
+{5}""".format(
+    indention * '\t', #0
+    identifier, #1
+    source, #2
+    self.signature, #3
+    self.size_bytes, #4
+    "".join(indention * '\t' + IntegralDatatype.orByte(i, identifier, "(*" + source + "++)") + ";\n" for i in range(1, self.size_bytes)), #5
+    )
+    def isInput(self, identifier):
+        return True
+    def isOutput(self, identifier):
+        return False
+    
+
 class BasicDatatype(Datatype):
     #simple memcpy
     def __init__(self, signature, size_bytes):
@@ -342,6 +400,9 @@ class Function:
     self.getDeclaration()
     )
 
+def setIntegralDataType(signature, size_bytes):
+    datatypes[signature] = IntegralDatatype(signature, size_bytes)
+
 def setBasicDataType(signature, size_bytes):
     datatypes[signature] = BasicDatatype(signature, size_bytes)
 
@@ -361,7 +422,7 @@ def setPredefinedDataTypes():
         ("uint64_t", 8),
         )
     for t in typeslist:
-        setBasicDataType(t[0], t[1])
+        setIntegralDataType(t[0], t[1])
 
 def setEnumTypes(enums):
     for e in enums:
@@ -617,11 +678,13 @@ def generateCode(file):
     parserImplementation = getParser(functionlist)
     return rpcHeader, rpcImplementation, parserImplementation
     
-rpcHeader, rpcImplementation, parserImplementation = generateCode("Testdata/oneDimensionalArrayTest.h")
+inputfile = "Testdata/oneDimensionalArrayTest.h"
+rpcHeader, rpcImplementation, parserImplementation = generateCode(inputfile)
 #rpcHeader, rpcImplementation = generateCode("test.h")
-for name, data in (("rpcHeader", rpcHeader), ("rpcImplementation", rpcImplementation), ("parserImplementation", parserImplementation)):
+for name, data in ((inputfile, open(inputfile).read()), ("rpcHeader", rpcHeader), ("rpcImplementation", rpcImplementation), ("parserImplementation", parserImplementation)):
     print(10*'-'+name+10*'-')
     print(data)
+
 #print(rpcHeader, rpcImplementation, parserImplementation)
 #print(parserImplementation)
 #print(len(rpcHeader) + len(rpcImplementation), len(rpcHeader.split("\n")) + len(rpcImplementation.split("\n")))
