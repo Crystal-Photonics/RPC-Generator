@@ -347,7 +347,8 @@ class Function:
     #requests have even numbers, answers have odd numbers
     def __init__(self, ID, returntype, name, parameterlist):
         #returntype can either be a Datatype "void", but no pointer
-        if not isVoidDatatype(returntype):
+        self.isVoidReturnType = isVoidDatatype(returntype)
+        if not self.isVoidReturnType:
             returnValueName = "return_value_out"
             rt = ArrayDatatype("1", returntype, returnValueName)
             parameterlist.insert(0, {"parameter":rt, "parametername":returnValueName})
@@ -360,33 +361,43 @@ class Function:
         if parameterdeclaration == "":
             parameterdeclaration = "void"
         return parameterdeclaration
+    def getCall(self):
+        if not self.isVoidReturnType:
+            returnvalue = "*return_value_out = "
+        else:
+            returnvalue = ""
+        return "{returnvalue}{functionname}({parameterlist});".format(
+            returnvalue = returnvalue,
+            functionname = self.name,
+            parameterlist = ", ".join(p["parametername"] for p in self.parameterlist[1:]),
+            )
     def getDefinition(self, destination, sendFunction, indention):
         #print(self.parameterlist)
         return """
-{0}RPC_RESULT {5}({6}){{
-{0}\t/***Serializing***/
-{0}\tchar *current = {1};
-{0}\t*current++ = {2}; /* save ID */
-{3}
+{indention}RPC_RESULT {functionname}({parameterdeclaration}){{
+{indention}\t/***Serializing***/
+{indention}\t\tchar *current = {destination};
+{indention}\t\t*current++ = {ID}; /* save ID */
+{inputParameterSerializationCode}
 
-{0}\t/***Communication***/
-{0}\t{4}(start, current - {1});
-{0}\tif (!(RPC_SLEEP()))
-{0}\t\treturn RPC_FAILURE;
+{indention}\t/***Communication***/
+{indention}\t\t{sendfunction}(start, current - {destination});
+{indention}\t\tif (!(RPC_SLEEP()))
+{indention}\t\t\treturn RPC_FAILURE;
 
-{0}\t/***Deserializing***/
-{0}\t{7}
-{0}\treturn RPC_SUCCESS;
-{0}}}
+{indention}\t/***Deserializing***/
+{indention}\t\t{outputParameterDeserialization}
+{indention}\t\treturn RPC_SUCCESS;
+{indention}}}
 """.format(
-    indention * '\t', #0
-    destination, #1
-    self.ID * 2, #2
-    "".join(p["parameter"].stringify("current", p["parametername"], indention + 1) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])), #3
-    sendFunction, #4
-    self.name, #5
-    self.getParameterDeclaration(), #6
-    "".join(p["parameter"].unstringify("current", p["parametername"], indention + 1) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])), #7
+    indention = indention * '\t',
+    destination = destination,
+    ID = self.ID * 2,
+    inputParameterSerializationCode = "".join(p["parameter"].stringify("current", p["parametername"], indention + 2) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    sendfunction = sendFunction,
+    functionname = self.name,
+    parameterdeclaration = self.getParameterDeclaration(),
+    outputParameterDeserialization = "".join(p["parameter"].unstringify("current", p["parametername"], indention + 2) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])), #7
     )
     def getDeclaration(self):
         return "RPC_RESULT {0}({1});".format(
@@ -395,24 +406,24 @@ class Function:
             )
     def getRequestParseCase(self, buffer):
         return """
-\t\tcase {0}: /* {1} */
+\t\tcase {ID}: /* {declaration} */
 \t\t{{
 \t\t/***Declarations***/
-{2}
+{parameterdeclarations}
 \t\t/***Read input parameters***/
-{3}
+{inputParameterDeserialization}
 \t\t/***Call function***/
-\t\t\t{4}
+\t\t\t{functioncall}
 \t\t/***send return value and output parameters***/
-\t\t\t{5}
+\t\t\t{outputParameterSerialization}
 \t\t}}
 \t\tbreak;""".format(
-    self.ID * 2, #0
-    self.getDeclaration(), #1
-    "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist), #2 #declaring parameters
-    "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])), #3 #deserializing input parameters
-    "//TODO", #4 #call function
-    "//TODO", #5 #send answer
+    ID = self.ID * 2,
+    declaration = self.getDeclaration(),
+    parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
+    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    functioncall = self.getCall(),
+    outputParameterSerialization = "//TODO",
     )
 
 def setIntegralDataType(signature, size_bytes):
