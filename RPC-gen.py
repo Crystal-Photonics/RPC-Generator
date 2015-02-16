@@ -409,13 +409,16 @@ class Function:
 \t\tcase {ID}: /* {declaration} */
 \t\t{{
 \t\t/***Declarations***/
+\t\t\tchar *RPC_current_send_buffer = RPC_send_buffer;
 {parameterdeclarations}
 \t\t/***Read input parameters***/
 {inputParameterDeserialization}
 \t\t/***Call function***/
 \t\t\t{functioncall}
 \t\t/***send return value and output parameters***/
+\t\t\t*RPC_current_send_buffer++ = {ID_plus_1};
 \t\t\t{outputParameterSerialization}
+\t\t\tRPC_SEND(RPC_send_buffer, RPC_current_send_buffer - RPC_send_buffer);
 \t\t}}
 \t\tbreak;""".format(
     ID = self.ID * 2,
@@ -423,7 +426,8 @@ class Function:
     parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
     inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
     functioncall = self.getCall(),
-    outputParameterSerialization = "//TODO",
+    outputParameterSerialization = "".join(p["parameter"].stringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
+    ID_plus_1 = self.ID * 2 + 1
     )
 
 def setIntegralDataType(signature, size_bytes):
@@ -704,7 +708,7 @@ def generateCode(file):
     parserImplementation = getParser(functionlist)
     return rpcHeader, rpcImplementation, parserImplementation
     
-inputfile = "Testdata/oneDimensionalArrayTest.h"
+inputfile = "Testdata/simpleTest.h"
 rpcHeader, rpcImplementation, parserImplementation = generateCode(inputfile)
 #rpcHeader, rpcImplementation = generateCode("test.h")
 for name, data in ((inputfile, open(inputfile).read()), ("rpcHeader", rpcHeader), ("rpcImplementation", rpcImplementation), ("parserImplementation", parserImplementation)):
@@ -715,5 +719,3 @@ for name, data in ((inputfile, open(inputfile).read()), ("rpcHeader", rpcHeader)
 #print(parserImplementation)
 #print(len(rpcHeader) + len(rpcImplementation), len(rpcHeader.split("\n")) + len(rpcImplementation.split("\n")))
 #print(" ".join(f["name"] for f in cppHeader.functions))
-
-
