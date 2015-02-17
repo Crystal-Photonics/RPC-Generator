@@ -6,6 +6,7 @@ int sendbuffer(const void *buffer, uint32_t buffer_size);
 void sleep();
 #pragma RPC ignore wakeup
 void wakeup();
+#define RPC_BUFFER_SIZE
 
 #define RPC_SEND(BUFFER, SIZE) sendbuffer((BUFFER), (SIZE))
 #define RPC_SLEEP() sleep()

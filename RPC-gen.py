@@ -43,8 +43,7 @@ class Datatype:
     def declaration(self, identifier):
         #returns the declaration for the datatype given its identifier such as "i" -> "int i" or "ia" -> "int ia[32][47]"
         raise NotImplemented
-    def stringify(self, destination, identifier, indention):
-        #destination is the name of a char * pointing to a buffer
+    def stringify(self, identifier, indention):
         #identifier is the name of the identifier we want to stringify, can be an expression
         #indention is the indention level of the code
         #returns code that does the stringifying
@@ -94,16 +93,15 @@ class IntegralDatatype(Datatype):
         self.size_bytes = size_bytes
     def declaration(self, identifier):
         return self.signature + " " + identifier
-    def stringify(self, destination, identifier, indention):
+    def stringify(self, identifier, indention):
         return """
-{0}/* writing integral type {3} {1} of size {4} */
-{5}""".format(
-    indention * '\t', #0
-    identifier, #1
-    destination, #2
-    self.signature, #3
-    self.size_bytes, #4
-    "".join(indention * '\t' + "*" + destination + "++ = " + IntegralDatatype.getByte(i, identifier) + ";\n" for i in range(self.size_bytes)), #5
+{indention}/* writing integral type {type} {identifier} of size {size} */
+{datapush}""".format(
+    indention = indention * '\t',
+    identifier = identifier,
+    type = self.signature,
+    size = self.size_bytes,
+    datapush = "".join(indention * '\t' + "RPC_push_byte(" + IntegralDatatype.getByte(i, identifier) + ");\n" for i in range(self.size_bytes)), #5
     )
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
@@ -124,54 +122,15 @@ class IntegralDatatype(Datatype):
     def isOutput(self, identifier):
         return False
     
-
-class BasicDatatype(Datatype):
-    #simple memcpy
-    def __init__(self, signature, size_bytes):
-        self.signature = signature
-        self.size_bytes = size_bytes
-    def declaration(self, identifier):
-        return self.signature + " " + identifier
-    def stringify(self, destination, identifier, indention):
-        if self.size_bytes == 0:
-            return ""
-        return """
-{0}/* writing basic type {3} {1} of size {4} */
-{0}memcpy({2}, &{1}, {4});
-{0}{2} += {4};""".format(
-    indention * '\t', #0
-    identifier, #1
-    destination, #2
-    self.signature, #3
-    self.size_bytes, #4
-    )
-    def unstringify(self, source, identifier, indention):
-        if self.size_bytes == 0:
-            return ""
-        return """
-{0}/* reading basic type {3} {1} of size {4} */
-{0}memcpy(&{1}, {2}, {4});
-{0}{2} += {4};""".format(
-    indention * '\t', #0
-    identifier, #1
-    source, #2
-    self.signature, #3
-    self.size_bytes, #4
-    )
-    def isInput(self, identifier):
-        return True
-    def isOutput(self, identifier):
-        return False
-
 class BasicTransferDatatype(Datatype):
-    #copy to temp and then memcpy
     def __init__(self, signature, size_bytes, transfertype):
         self.signature = signature
         self.size_bytes = size_bytes
         self.transfertype = transfertype
     def declaration(self, identifier):
         return self.signature + " " + identifier
-    def stringify(self, destination, identifier, indention):
+    def stringify(self, identifier, indention):
+        #TODO: Fix memcpy and destination
         if self.size_bytes == 0:
             return ""
         return """
@@ -226,24 +185,23 @@ class ArrayDatatype(Datatype):
         return identifier.endswith("in") or identifier.endswith("inout")
     def isOutput(self, identifier):
         return identifier.endswith("out") or identifier.endswith("inout") or identifier.endswith(']')
-    def stringify(self, destination, identifier, indention):
+    def stringify(self, identifier, indention):
         if self.numberOfElements == "1":
             #no loop required for 1 element
-            return "{0}{1}".format(indention * '\t', self.datatype.stringify(destination, "*" + identifier, indention))
+            return "{0}{1}".format(indention * '\t', self.datatype.stringify("*" + identifier, indention))
         return """
-{3}/* writing array {0} with {2} elements */
-{3}{{
-{3}\tint RPC_COUNTER_VAR{5};
-{3}\tfor (RPC_COUNTER_VAR{5} = 0; RPC_COUNTER_VAR{5} < {2}; RPC_COUNTER_VAR{5}++){{
-{4}
-{3}\t}}
-{3}}}""".format(
-    identifier, #0
-    None, #1
-    self.numberOfElements, #2
-    indention * '\t', #3
-    self.datatype.stringify(destination, "" + identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2), #4
-    indention, #5
+{indention}/* writing array {name} with {numberOfElements} elements */
+{indention}{{
+{indention}\tint RPC_COUNTER_VAR{indentID};
+{indention}\tfor (RPC_COUNTER_VAR{indentID} = 0; RPC_COUNTER_VAR{indentID} < {2}; RPC_COUNTER_VAR{indentID}++){{
+{serialization}
+{indention}\t}}
+{indention}}}""".format(
+    name = identifier,
+    numberOfElements = self.numberOfElements,
+    indention = indention * '\t',
+    serialization = self.datatype.stringify("" + identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2),
+    indentID = indention,
     )
     def unstringify(self, destination, identifier, indention):
         if self.numberOfElements == "1":
@@ -277,20 +235,20 @@ class PointerDatatype(Datatype):
         return self.signature + " " + identifier
     def setNumberOfElementsIdentifier(self, numberOfElementsIdentifier):
         self.numberOfElementsIdentifier = numberOfElementsIdentifier
-    def stringify(self, destination, identifier, indention):
+    def stringify(self, identifier, indention):
         return """
-{3}/* writing pointer {1}{0} with [{2}] elements*/
-{3}{{
-{3}\tint i;
-{3}\tfor (i = 0; i < {2}; i++){{
-{4}
-{3}\t}}
-{3}}}""".format(
-    identifier, #0
-    self.signature, #1
-    self.numberOfElementsIdentifier, #2
-    indention * '\t', #3
-    self.datatype.stringify(destination, identifier + "[i]", indention + 2) #4
+{indention}/* writing pointer {type}{name} with {index} elements*/
+{indention}{{
+{indention}\tint i;
+{indention}\tfor (i = 0; i < {index}; i++){{
+{serialization}
+{indention}\t}}
+{indention}}}""".format(
+    name = identifier,
+    type = self.signature,
+    index = self.numberOfElementsIdentifier,
+    indention = indention * '\t',
+    serialization = self.datatype.stringify(destination, identifier + "[i]", indention + 2),
     )
     def unstringify(self, destination, identifier, indention):
         return """
@@ -321,17 +279,16 @@ class StructDatatype(Datatype):
         self.lineNumber = lineNumber
     def declaration(self, identifier):
         return self.signature + " " + identifier
-    def stringify(self, destination, identifier, indention):
+    def stringify(self, identifier, indention):
         members = ", ".join(m["type"] + " " + m["name"] for m in self.memberList)
         #print(self.memberList)
-        memberStringification = "".join(getDatatype(m["type"], self.file, self.lineNumber).stringify(destination, identifier + "." + m["name"], indention + 1) for m in self.memberList)
-        return "{0}/*writing {4} of type {1} to {2} with members {3}*/\n{0}{{{5}\n{0}}}".format(
-            indention * '\t', #0
-            self.signature, #1
-            destination, #2
-            members, #3
-            identifier, #4
-            memberStringification, #5
+        memberStringification = "".join(getDatatype(m["type"], self.file, self.lineNumber).stringify(identifier + "." + m["name"], indention + 1) for m in self.memberList)
+        return "{indention}/*writing {identifier} of type {type} with members {members}*/\n{indention}{{{memberStringification}\n{indention}}}".format(
+            indention = indention * '\t',
+            type = self.signature,
+            members = members,
+            identifier = identifier,
+            memberStringification = memberStringification,
             )
     def isInput(self, identifier):
         #TODO: Go through members and return if for any of them isInput is true
@@ -371,17 +328,16 @@ class Function:
             functionname = self.name,
             parameterlist = ", ".join(p["parametername"] for p in self.parameterlist[1:]),
             )
-    def getDefinition(self, destination, sendFunction, indention):
+    def getDefinition(self, indention):
         #print(self.parameterlist)
         return """
 {indention}RPC_RESULT {functionname}({parameterdeclaration}){{
 {indention}\t/***Serializing***/
-{indention}\t\tchar *current = {destination};
-{indention}\t\t*current++ = {ID}; /* save ID */
+{indention}\t\tRPC_push_byte({ID}); /* save ID */
 {inputParameterSerializationCode}
 
 {indention}\t/***Communication***/
-{indention}\t\t{sendfunction}(start, current - {destination});
+{indention}\t\tRPC_commit();
 {indention}\t\tif (!(RPC_SLEEP()))
 {indention}\t\t\treturn RPC_FAILURE;
 
@@ -391,10 +347,8 @@ class Function:
 {indention}}}
 """.format(
     indention = indention * '\t',
-    destination = destination,
     ID = self.ID * 2,
-    inputParameterSerializationCode = "".join(p["parameter"].stringify("current", p["parametername"], indention + 2) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
-    sendfunction = sendFunction,
+    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], indention + 2) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
     outputParameterDeserialization = "".join(p["parameter"].unstringify("current", p["parametername"], indention + 2) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])), #7
@@ -408,17 +362,15 @@ class Function:
         return """
 \t\tcase {ID}: /* {declaration} */
 \t\t{{
-\t\t/***Declarations***/
-\t\t\tchar *RPC_current_send_buffer = RPC_send_buffer;
-{parameterdeclarations}
+\t\t/***Declarations***/{parameterdeclarations}
 \t\t/***Read input parameters***/
 {inputParameterDeserialization}
 \t\t/***Call function***/
 \t\t\t{functioncall}
 \t\t/***send return value and output parameters***/
-\t\t\t*RPC_current_send_buffer++ = {ID_plus_1};
+\t\t\tRPC_push_byte({ID_plus_1});
 \t\t\t{outputParameterSerialization}
-\t\t\tRPC_SEND(RPC_send_buffer, RPC_current_send_buffer - RPC_send_buffer);
+\t\t\tRPC_commit();
 \t\t}}
 \t\tbreak;""".format(
     ID = self.ID * 2,
@@ -426,7 +378,7 @@ class Function:
     parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
     inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
     functioncall = self.getCall(),
-    outputParameterSerialization = "".join(p["parameter"].stringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
+    outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
     ID_plus_1 = self.ID * 2 + 1
     )
 
@@ -667,7 +619,7 @@ def getParser(functions):
     buffername = "buffer"
     return """
 void RPC_parse(const char *{1}, unsigned int size){{
-\tswitch ((unsigned char)*buffer){{{0}
+\tswitch (*(unsigned char*)buffer){{{0}
 \t}}
 }}""".format(
     "".join(f.getRequestParseCase(buffername) for f in functions), #0
@@ -729,7 +681,7 @@ def generateCode(file):
         if not f["name"] in functionIgnoreList:
             functionlist.append(getFunction(f))
     rpcHeader = "".join(f.getDeclaration() for f in functionlist) + "\n"
-    rpcImplementation = "".join(f.getDefinition("sendBuffer", "send", 0) for f in functionlist) + "\n"
+    rpcImplementation = "".join(f.getDefinition(0) for f in functionlist) + "\n"
     parserImplementation = getParser(functionlist)
     return rpcHeader, rpcImplementation, parserImplementation
 
@@ -755,41 +707,55 @@ doNotModifyHeader = """/* This file has been automatically generated by RPC-Gene
 
 rpc_enum = "typedef enum{RPC_FAILURE, RPC_SUCCESS} RPC_RESULT;\n\n"
 
-f = open(args.outputheader, "w")
-f.write(doNotModifyHeader)
-f.write(rpc_enum)
-f.write(rpcHeader)
-f.close()
-f = open(args.outputcimplementation, "w")
-f.write(doNotModifyHeader)
+externC_intro = """#ifdef __cplusplus
+extern "C" {
+#endif
+
+"""
+externC_outro = """
+#ifdef __cplusplus
+}
+#endif
+"""
+
+
+header = open(args.outputheader, "w")
+header.write(doNotModifyHeader)
+header.write(externC_intro)
+header.write(rpc_enum)
+header.write(rpcHeader)
+header.write(externC_outro)
+header.close()
+
+implementation = open(args.outputcimplementation, "w")
+implementation.write(doNotModifyHeader)
 from os.path import relpath, abspath, commonprefix, splitdrive, split, join, normpath
-f.write('#include "{}"\n#include <stdint.h>\n'.format(
+implementation.write('#include "{}"\n#include <stdint.h>\n'.format(
     normpath(
         join(
             relpath(
                 split(
                     splitdrive(
                         abspath(args.outputheader)
-                        )
-                    [1])
-                [0],
+                    )[1]
+                )[0],
                 split(
                     splitdrive(
                         abspath(args.outputcimplementation)
-                        )
-                    [1])
-                [0])
-            , split(
+                    )[1]
+                )[0]
+            ),
+            split(
                 splitdrive(
                     abspath(args.outputheader)
-                    )[1]
                 )[1]
-            )
+            )[1]
         )
-    ))
-f.write(rpcImplementation)
-f.write(parserImplementation)
-f.close()
+    )
+))
+implementation.write(rpcImplementation)
+implementation.write(parserImplementation)
+implementation.close()
 
 #print(rpcHeader, rpcImplementation, parserImplementation)
 #print(parserImplementation)
