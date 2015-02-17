@@ -64,6 +64,10 @@ class Datatype:
         #pointers and arrays can be output parameters, integers can never be output parameters
         #if pointers and arrays are output parameters depends on their identifier name
         raise NotImplemented
+    def getSize(self):
+        #returns the number of bytes required to send this datatype over the network
+        #pointers return 0.
+        raise NotImplemented
         
 
 class IntegralDatatype(Datatype):
@@ -87,7 +91,7 @@ class IntegralDatatype(Datatype):
             return "{0} |= {1} << {2}L".format(identifier, source, 8 * number)
         elif number < 8:
             return "{0} |= {1} << {2}LL".format(identifier, source, 8 * number)
-    #use mod and divide to prevent endianess problems
+    #use bitshift to prevent endianess problems
     def __init__(self, signature, size_bytes):
         self.signature = signature
         self.size_bytes = size_bytes
@@ -121,6 +125,9 @@ class IntegralDatatype(Datatype):
         return True
     def isOutput(self, identifier):
         return False
+    def getSize(self):
+        assert type(self.size_bytes) == int
+        return self.size_bytes
     
 class BasicTransferDatatype(Datatype):
     def __init__(self, signature, size_bytes, transfertype):
@@ -171,6 +178,9 @@ class BasicTransferDatatype(Datatype):
         return True
     def isOutput(self, identifier):
         return False
+    def getSize(self):
+        assert type(self.size_bytes) == int
+        return self.size_bytes
 
 class ArrayDatatype(Datatype):
     #need to be mindful of padding, otherwise it is a fixed size loop
@@ -193,7 +203,7 @@ class ArrayDatatype(Datatype):
 {indention}/* writing array {name} with {numberOfElements} elements */
 {indention}{{
 {indention}\tint RPC_COUNTER_VAR{indentID};
-{indention}\tfor (RPC_COUNTER_VAR{indentID} = 0; RPC_COUNTER_VAR{indentID} < {2}; RPC_COUNTER_VAR{indentID}++){{
+{indention}\tfor (RPC_COUNTER_VAR{indentID} = 0; RPC_COUNTER_VAR{indentID} < {numberOfElements}; RPC_COUNTER_VAR{indentID}++){{
 {serialization}
 {indention}\t}}
 {indention}}}""".format(
@@ -222,6 +232,8 @@ class ArrayDatatype(Datatype):
     self.datatype.unstringify(destination, identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2), #4
     indention, #5
     )
+    def getSize(self):
+        return int(self.numberOfElements) * self.datatype.getSize()
 
 class PointerDatatype(Datatype):
     #need to be mindful of parring, otherwise it is a variable sized loop
@@ -269,6 +281,8 @@ class PointerDatatype(Datatype):
         return self.In
     def isOutput(self, identifier):
         return self.Out
+    def getSize(self):
+        return 0.
 
 class StructDatatype(Datatype):
     #just call the functions of all the members in order
@@ -296,6 +310,8 @@ class StructDatatype(Datatype):
     def isOutput(self, identifier):
         #TODO: Go through members and return if for any of them isOutput is true
         raise NotImplemented
+    def getSize(self):
+        return sum(m.getSize() for m in self.memberList)
 
 class Function:
     #stringify turns a function call into a string and sends it to the other side
@@ -362,7 +378,8 @@ class Function:
         return """
 \t\tcase {ID}: /* {declaration} */
 \t\t{{
-\t\t/***Declarations***/{parameterdeclarations}
+\t\t/***Declarations***/
+{parameterdeclarations}
 \t\t/***Read input parameters***/
 {inputParameterDeserialization}
 \t\t/***Call function***/
@@ -380,6 +397,26 @@ class Function:
     functioncall = self.getCall(),
     outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
     ID_plus_1 = self.ID * 2 + 1
+    )
+    def getRequestSizeCase(self, buffer):
+        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput(p["parametername"]))
+        retvalsetcode = ""
+        if type(size) == float: #variable length
+            retvalsetcode += """\t\t\tif (size_bytes >= 3)
+\t\t\t\treturnvalue.size = (*(unsigned char *)buffer)[1] + (*(unsigned char *)buffer)[2] << 8;
+\t\t\telse{
+\t\t\t\treturnvalue.size = 3;
+\t\t\t\treturnvalue.result = RPC_COMMAND_INCOMPLETE;
+\t\t\t}
+\t\t\tbreak;"""
+        else:
+            retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";\n\t\t\tbreak;"
+        return """
+\t\tcase {answerID}: /* {functiondeclaration} */
+{retvalsetcode}""".format(
+    answerID = self.ID * 2 + 1,
+    retvalsetcode = retvalsetcode,
+    functiondeclaration = self.getDeclaration(),
     )
 
 def setIntegralDataType(signature, size_bytes):
@@ -610,16 +647,53 @@ def getGenericHeader(version):
 
 /* typedefs for non-standard bit integers */
 {1}
-/* Return value of RPC functions */
-typedef enum{{RPC_FAILURE, RPC_SUCCESS}} RPC_RESULT;
 /* The optional original return value is returned through the first parameter */
 """.format(version, getNonstandardTypedefs())
 
+def getSizeFunction(functions):
+    return """#include <stddef.h> /* for size_t */
+
+/* size is only valid if result equals RPC_SUCCESS. //TODO: Move to header */
+struct RPC_message_size{{
+\tRPC_RESULT result;
+\tsize_t size;
+}};
+
+/* Receives a pointer to a (partly) received message and it's size.
+   Returns a result and a size. If size equals RPC_SUCCESS then size is the
+   size that the message is supposed to have. If result equals RPC_COMMAND_INCOMPLETE
+   then more bytes are required to determine the size of the message. In this case
+   size is the expected number of bytes required to determine the correct size.*/
+RPC_message_size RPC_get_message_size(const void *buffer, size_t size_bytes){{
+\tconst unsigned char *current = (const unsigned char *)buffer;
+\tstruct RPC_message_size returnvalue = {{RPC_SUCCESS, 0}};
+
+\tif (size_bytes == 0){{
+\t\treturnvalue.result = RPC_COMMAND_INCOMPLETE;
+\t\treturnvalue.size = 1;
+\t\treturn returnvalue;
+\t}}
+
+\tswitch (*(const unsigned char *)buffer){{ /* switch by message ID */{}
+\t\tdefault:
+\t\t\treturnvalue.result = RPC_COMMAND_UNKNOWN;
+\t\t\tbreak;
+\t}}
+
+\treturn returnvalue;
+}}
+""".format(
+    "".join(f.getRequestSizeCase("current") for f in functions)
+    )
+
 def getParser(functions):
-    buffername = "buffer"
+    buffername = "current"
     return """
-void RPC_parse(const char *{1}, unsigned int size){{
-\tswitch (*(unsigned char*)buffer){{{0}
+/* This function parses RPC-Requests, calls the original function and sends an
+   answer. */
+void RPC_parse(const void *{1}, size_t size_bytes){{
+\tconst unsigned char *current = (unsigned char *)buffer;
+\tswitch (*current){{{0}
 \t}}
 }}""".format(
     "".join(f.getRequestParseCase(buffername) for f in functions), #0
@@ -645,7 +719,7 @@ def generateCode(file):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
     #return None
-    checkDefines(ast.defines)
+    #checkDefines(ast.defines)
     setPredefinedDataTypes()
     #print(ast.includes)
     for i in ast.includes:
@@ -682,7 +756,7 @@ def generateCode(file):
             functionlist.append(getFunction(f))
     rpcHeader = "".join(f.getDeclaration() for f in functionlist) + "\n"
     rpcImplementation = "".join(f.getDefinition(0) for f in functionlist) + "\n"
-    parserImplementation = getParser(functionlist)
+    parserImplementation = getSizeFunction(functionlist) + getParser(functionlist)
     return rpcHeader, rpcImplementation, parserImplementation
 
 def getFilePaths():
@@ -728,7 +802,7 @@ externC_outro = """
 #endif
 """
 
-rpc_enum = "typedef enum{RPC_FAILURE, RPC_SUCCESS} RPC_RESULT;\n\n"
+rpc_enum = "typedef enum{RPC_SUCCESS, RPC_FAILURE, RPC_COMMAND_UNKNOWN, RPC_COMMAND_INCOMPLETE} RPC_RESULT;\n\n"
 
 def getRPC_serviceHeader(sourceHeader):
     return "{doNotModify}{externC_intro}{rpc_declarations}{externC_outro}".format(
@@ -737,8 +811,8 @@ def getRPC_serviceHeader(sourceHeader):
         externC_outro = externC_outro,
         rpc_declarations = """
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   Note: The following functions must be implemented by YOU.
-   They are used by the RPC_* functions
+   IMPORTANT: The following 3 functions must be implemented by YOU.
+   They are required for the RPC to work.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
    
 void RPC_push_byte(unsigned char byte);
@@ -752,24 +826,34 @@ void RPC_commit();
    even if the buffer is not full. RPC_commit should block until you are
    fairly certain that the message has arrived on the other side. */
 
-unsigned char RPC_pop_byte();
-/* This function is used to get a byte recieved from the network. If there is
-   nothing to read this function should block until data arrives. */
+void RPC_start_message();
+/*  This function is called when a new message starts. It can be used to
+    free or allocate buffers and write preambles. The implementation can be
+    empty */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   The following function is automatically generated.
+   The following functions are automatically generated.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
-void RPC_parser_service();
-/* This function calls RPC_pop_byte, parses the data and reacts by calling the
-   functions from the header you specified, which is {} */
-""".format(sourceHeader),
+/* Return values used by some RPC functions */
+{}
+void RPC_parse();
+/* This function parses RPC-Requests, calls the original function and sends an
+   answer. */
+""".format(rpc_enum),
         )
 
 files = getFilePaths()
 RPC_serviceHeader = getRPC_serviceHeader(files["ServerHeaderFileName"])
 
 rpcHeader, rpcImplementation, parserImplementation = generateCode(files["ServerHeader"])
+
+parserImplementation = doNotModifyHeader + parserImplementation
+
+rpcImplementation = '{doNotModify}\n#include <stdint.h>\n#include "{rpc_client_header}"\n{implementation}'.format(
+    doNotModify = doNotModifyHeader,
+    rpc_client_header = "RPC_" + files["ServerHeaderFileName"][:-1] + 'h',
+    implementation = rpcImplementation)
 
 for file, data in (
     ("ClientHeader", getRPC_serviceHeader(files["ServerHeaderFileName"])),
