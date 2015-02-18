@@ -1,1 +1,1 @@
-@python ../RPC-gen.py ../Testproject/Client/client.h ../Testproject/Server/client.h ../Testproject/Server/client.c && cmake ../Testproject/Server
+@python ../RPC-gen.py ../Testproject/Client/client.h ../Testproject/Server && cmake ../Testproject/Server
