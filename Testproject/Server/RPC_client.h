@@ -6,39 +6,55 @@
 extern "C" {
 #endif
 
+#include <stddef.h> /* for size_t */
+
+/* Return values used by some RPC functions */
+typedef enum{RPC_SUCCESS, RPC_FAILURE, RPC_COMMAND_UNKNOWN, RPC_COMMAND_INCOMPLETE} RPC_RESULT;
+
+typedef struct {
+	RPC_RESULT result;
+	size_t size;
+} RPC_SIZE_RESULT;
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    IMPORTANT: The following 3 functions must be implemented by YOU.
    They are required for the RPC to work.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
    
+void RPC_start_message(size_t size);
+/*  This function is called when a new message starts. {size} is the number of
+    bytes the message will require. In the implementation you can allocate  a
+    buffers or write a preamble. The implementation can be empty if you do not
+    need to do that. */
+
 void RPC_push_byte(unsigned char byte);
 /* Pushes a byte to be sent via network. You should put all the pushed bytes
    into a buffer and send the buffer when RPC_commit is called. If you run
-   out of buffer you can send a partial message. */
+   out of buffer you can send multiple partial messages as long as the other
+   side can put them back together. */
 
-void RPC_commit();
+RPC_RESULT RPC_commit();
 /* This function is called when a complete message has been pushed using
    RPC_push_byte. Now is a good time to send the buffer over the network,
-   even if the buffer is not full. RPC_commit should block until you are
-   fairly certain that the message has arrived on the other side. */
-
-void RPC_start_message();
-/*  This function is called when a new message starts. It can be used to
-    free or allocate buffers and write preambles. The implementation can be
-    empty */
+   even if the buffer is not yet full. You may also want to free the buffer.
+   RPC_commit should return RPC_SUCCESS if the buffer has been successfully
+   sent and RPC_FAILURE otherwise. */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   The following functions are automatically generated.
+   The following functions's implementations are automatically generated.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
-/* Return values used by some RPC functions */
-typedef enum{RPC_SUCCESS, RPC_FAILURE, RPC_COMMAND_UNKNOWN, RPC_COMMAND_INCOMPLETE} RPC_RESULT;
+RPC_SIZE_RESULT RPC_parse_answer(const void *buffer, size_t size);
+/* This function parses answer received from the network. {buffer} points to the
+   buffer that contains the received data and {size} contains the number of bytes
+   that have been received (NOT the size of the buffer!). This function will wake
+   up RPC_*-functions below that are waiting for an answer.
+   //TODO: Document return value */
 
-
-void RPC_parse();
-/* This function parses RPC-Requests, calls the original function and sends an
-   answer. */
+/* RPC-Functions provided by the RPC-Generator
+   //TODO: copy comments for documentation */
+RPC_RESULT square(int32_t return_value_out[1], int32_t i);
+RPC_RESULT test(int32_t return_value_out[1], uint16_t data_inout[42]);
 
 #ifdef __cplusplus
 }

@@ -33,6 +33,7 @@ RPC_RESULT square(int32_t return_value_out[1], int32_t i){
 		return RPC_SUCCESS;
 }
 
+
 RPC_RESULT test(int32_t return_value_out[1], uint16_t data_inout[42]){
 	/***Serializing***/
 		RPC_push_byte(4); /* save ID */
@@ -76,3 +77,4 @@ RPC_RESULT test(int32_t return_value_out[1], uint16_t data_inout[42]){
 		return RPC_SUCCESS;
 }
 
+/* TODO: answer parser */

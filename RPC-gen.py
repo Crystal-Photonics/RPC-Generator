@@ -686,7 +686,7 @@ RPC_message_size RPC_get_message_size(const void *buffer, size_t size_bytes){{
     "".join(f.getRequestSizeCase("current") for f in functions)
     )
 
-def getParser(functions):
+def getRequestParser(functions):
     buffername = "current"
     return """
 /* This function parses RPC-Requests, calls the original function and sends an
@@ -697,6 +697,20 @@ void RPC_parse(const void *{1}, size_t size_bytes){{
 \t}}
 }}""".format(
     "".join(f.getRequestParseCase(buffername) for f in functions), #0
+    buffername, #1
+    )
+
+def getAnswerParser(functions):
+    buffername = "current"
+    return """
+/* This function parses RPC-Requests, calls the original function and sends an
+   answer. */
+void RPC_parse_answer(const void *{1}, size_t size_bytes){{
+\tconst unsigned char *current = (unsigned char *)buffer;
+\tswitch (*current){{{0}
+\t}}
+}}""".format(
+    "".join(f.getAnswerParseCase(buffername) for f in functions), #0
     buffername, #1
     )
 
@@ -754,10 +768,11 @@ def generateCode(file):
     for f in ast.functions:
         if not f["name"] in functionIgnoreList:
             functionlist.append(getFunction(f))
-    rpcHeader = "".join(f.getDeclaration() for f in functionlist) + "\n"
-    rpcImplementation = "".join(f.getDefinition(0) for f in functionlist) + "\n"
-    parserImplementation = getSizeFunction(functionlist) + getParser(functionlist)
-    return rpcHeader, rpcImplementation, parserImplementation
+    rpcHeader = "\n".join(f.getDeclaration() for f in functionlist) + "\n"
+    rpcImplementation = "\n".join(f.getDefinition(0) for f in functionlist) + "\n"
+    requestParserImplementation = getSizeFunction(functionlist) + getRequestParser(functionlist)
+    answerParser = getAnswerParser(functionlist)
+    return rpcHeader, rpcImplementation, requestParserImplementation, answerParser
 
 def getFilePaths():
     #get paths for various files that need to be created. all created files start with "RPC_"
@@ -796,59 +811,80 @@ extern "C" {
 #endif
 
 """
-externC_outro = """
-#ifdef __cplusplus
+externC_outro = """#ifdef __cplusplus
 }
 #endif
 """
 
-rpc_enum = "typedef enum{RPC_SUCCESS, RPC_FAILURE, RPC_COMMAND_UNKNOWN, RPC_COMMAND_INCOMPLETE} RPC_RESULT;\n\n"
+rpc_enum = "typedef enum{RPC_SUCCESS, RPC_FAILURE, RPC_COMMAND_UNKNOWN, RPC_COMMAND_INCOMPLETE} RPC_RESULT;\n"
 
-def getRPC_serviceHeader(sourceHeader):
+def getRPC_serviceHeader(headers):
     return "{doNotModify}{externC_intro}{rpc_declarations}{externC_outro}".format(
         doNotModify = doNotModifyHeader,
         externC_intro = externC_intro,
         externC_outro = externC_outro,
-        rpc_declarations = """
+        rpc_declarations = """#include <stddef.h> /* for size_t */
+
+/* Return values used by some RPC functions */
+{}
+typedef struct {{
+\tRPC_RESULT result;
+\tsize_t size;
+}} RPC_SIZE_RESULT;
+
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    IMPORTANT: The following 3 functions must be implemented by YOU.
    They are required for the RPC to work.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
    
+void RPC_start_message(size_t size);
+/*  This function is called when a new message starts. {{size}} is the number of
+    bytes the message will require. In the implementation you can allocate  a
+    buffers or write a preamble. The implementation can be empty if you do not
+    need to do that. */
+
 void RPC_push_byte(unsigned char byte);
 /* Pushes a byte to be sent via network. You should put all the pushed bytes
    into a buffer and send the buffer when RPC_commit is called. If you run
-   out of buffer you can send a partial message. */
+   out of buffer you can send multiple partial messages as long as the other
+   side can put them back together. */
 
-void RPC_commit();
+RPC_RESULT RPC_commit();
 /* This function is called when a complete message has been pushed using
    RPC_push_byte. Now is a good time to send the buffer over the network,
-   even if the buffer is not full. RPC_commit should block until you are
-   fairly certain that the message has arrived on the other side. */
-
-void RPC_start_message();
-/*  This function is called when a new message starts. It can be used to
-    free or allocate buffers and write preambles. The implementation can be
-    empty */
+   even if the buffer is not yet full. You may also want to free the buffer.
+   RPC_commit should return RPC_SUCCESS if the buffer has been successfully
+   sent and RPC_FAILURE otherwise. */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   The following functions are automatically generated.
+   The following functions's implementations are automatically generated.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
-/* Return values used by some RPC functions */
+RPC_SIZE_RESULT RPC_parse_answer(const void *buffer, size_t size);
+/* This function parses answer received from the network. {{buffer}} points to the
+   buffer that contains the received data and {{size}} contains the number of bytes
+   that have been received (NOT the size of the buffer!). This function will wake
+   up RPC_*-functions below that are waiting for an answer.
+   //TODO: Document return value */
+
+/* RPC-Functions provided by the RPC-Generator
+   //TODO: copy comments for documentation */
 {}
-void RPC_parse();
+""".format(
+    rpc_enum,
+    headers,
+    ),)
+
+"""RPC_SIZE_RESULT RPC_parse();
 /* This function parses RPC-Requests, calls the original function and sends an
    answer. */
-""".format(rpc_enum),
-        )
+"""
 
 files = getFilePaths()
-RPC_serviceHeader = getRPC_serviceHeader(files["ServerHeaderFileName"])
 
-rpcHeader, rpcImplementation, parserImplementation = generateCode(files["ServerHeader"])
+rpcHeader, rpcImplementation, requestParserImplementation, answerParser = generateCode(files["ServerHeader"])
 
-parserImplementation = doNotModifyHeader + parserImplementation
+requestParserImplementation = doNotModifyHeader + requestParserImplementation
 
 rpcImplementation = '{doNotModify}\n#include <stdint.h>\n#include "{rpc_client_header}"\n{implementation}'.format(
     doNotModify = doNotModifyHeader,
@@ -856,9 +892,9 @@ rpcImplementation = '{doNotModify}\n#include <stdint.h>\n#include "{rpc_client_h
     implementation = rpcImplementation)
 
 for file, data in (
-    ("ClientHeader", getRPC_serviceHeader(files["ServerHeaderFileName"])),
-    ("ClientImplementation", rpcImplementation),
-    ("RPC_serviceImplementation", parserImplementation),
+    ("ClientHeader", getRPC_serviceHeader(rpcHeader)),
+    ("ClientImplementation", rpcImplementation + answerParser),
+    ("RPC_serviceImplementation", requestParserImplementation),
     ):
     f = open(files[file], "w")
     f.write(data)
