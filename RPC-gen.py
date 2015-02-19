@@ -143,8 +143,8 @@ class BasicTransferDatatype(Datatype):
         return """
 {0}/* writing basic type {3} {1} of size {4} */
 {0}{{
-{0}\t{5} temp = ({5}){1};
-{0}\tmemcpy({2}, &temp, {4});
+{0}	{5} temp = ({5}){1};
+{0}	memcpy({2}, &temp, {4});
 {0}}}
 {0}{2} += {4};""".format(
     indention * '\t', #0
@@ -162,9 +162,9 @@ class BasicTransferDatatype(Datatype):
         return """
 {0}/* reading basic type {3}{1} of size {4} */
 {0}{
-{0}\t{5} temp;
-{0}\tmemcpy(&temp, {2}, {4});
-{0}\t{2} = temp;
+{0}	{5} temp;
+{0}	memcpy(&temp, {2}, {4});
+{0}	{2} = temp;
 {0}}
 {0}{2} += {4};""".format(
     indention * '\t', #0
@@ -202,10 +202,10 @@ class ArrayDatatype(Datatype):
         return """
 {indention}/* writing array {name} with {numberOfElements} elements */
 {indention}{{
-{indention}\tint RPC_COUNTER_VAR{indentID};
-{indention}\tfor (RPC_COUNTER_VAR{indentID} = 0; RPC_COUNTER_VAR{indentID} < {numberOfElements}; RPC_COUNTER_VAR{indentID}++){{
+{indention}	int RPC_COUNTER_VAR{indentID};
+{indention}	for (RPC_COUNTER_VAR{indentID} = 0; RPC_COUNTER_VAR{indentID} < {numberOfElements}; RPC_COUNTER_VAR{indentID}++){{
 {serialization}
-{indention}\t}}
+{indention}	}}
 {indention}}}""".format(
     name = identifier,
     numberOfElements = self.numberOfElements,
@@ -220,10 +220,10 @@ class ArrayDatatype(Datatype):
         return """
 {3}/* reading array {0} with {2} elements */
 {3}{{
-{3}\tint RPC_COUNTER_VAR{5};
-{3}\tfor (RPC_COUNTER_VAR{5} = 0; RPC_COUNTER_VAR{5} < {2}; RPC_COUNTER_VAR{5}++){{
+{3}	int RPC_COUNTER_VAR{5};
+{3}	for (RPC_COUNTER_VAR{5} = 0; RPC_COUNTER_VAR{5} < {2}; RPC_COUNTER_VAR{5}++){{
 {4}
-{3}\t}}
+{3}	}}
 {3}}}""".format(
     identifier, #0
     None, #1
@@ -251,10 +251,10 @@ class PointerDatatype(Datatype):
         return """
 {indention}/* writing pointer {type}{name} with {index} elements*/
 {indention}{{
-{indention}\tint i;
-{indention}\tfor (i = 0; i < {index}; i++){{
+{indention}	int i;
+{indention}	for (i = 0; i < {index}; i++){{
 {serialization}
-{indention}\t}}
+{indention}	}}
 {indention}}}""".format(
     name = identifier,
     type = self.signature,
@@ -266,10 +266,10 @@ class PointerDatatype(Datatype):
         return """
 {3}/* reading pointer {1}{0} with [{2}] elements*/
 {3}{{
-{3}\tint i;
-{3}\tfor (i = 0; i < {2}; i++){{
+{3}	int i;
+{3}	for (i = 0; i < {2}; i++){{
 {4}
-{3}\t}}
+{3}	}}
 {3}}}""".format(
     identifier, #0
     self.signature, #1
@@ -348,18 +348,26 @@ class Function:
         #print(self.parameterlist)
         return """
 {indention}RPC_RESULT {functionname}({parameterdeclaration}){{
-{indention}\t/***Serializing***/
-{indention}\t\tRPC_push_byte({ID}); /* save ID */
+{indention}	/***Synchronizing***/
+{indention}		RPC_mutex_lock(RPC_mutex_caller);
+{indention}		RPC_mutex_lock(RPC_mutex_expected);
+{indention}		expecting_answer = 1;
+{indention}		RPC_mutex_unlock(RPC_mutex_expected);
+{indention}		RPC_mutex_lock(RPC_mutex_sender);
+
+{indention}	/***Serializing***/
+{indention}		RPC_push_byte({ID}); /* save ID */
 {inputParameterSerializationCode}
+{indention}		RPC_mutex_unlock(RPC_mutex_sender);
 
-{indention}\t/***Communication***/
-{indention}\t\tRPC_commit();
-{indention}\t\tif (!(RPC_SLEEP()))
-{indention}\t\t\treturn RPC_FAILURE;
+{indention}	/***Communication***/
+{indention}		RPC_commit();
+{indention}		RPC_mutex_lock(RPC_mutex_sender);
+{indention}		//TODO: check commit result
 
-{indention}\t/***Deserializing***/
-{indention}\t\t{outputParameterDeserialization}
-{indention}\t\treturn RPC_SUCCESS;
+{indention}	/***Deserializing***/
+{indention}		{outputParameterDeserialization}
+{indention}		return RPC_SUCCESS;
 {indention}}}
 """.format(
     indention = indention * '\t',
@@ -376,20 +384,20 @@ class Function:
             )
     def getRequestParseCase(self, buffer):
         return """
-\t\tcase {ID}: /* {declaration} */
-\t\t{{
-\t\t/***Declarations***/
+		case {ID}: /* {declaration} */
+		{{
+		/***Declarations***/
 {parameterdeclarations}
-\t\t/***Read input parameters***/
+		/***Read input parameters***/
 {inputParameterDeserialization}
-\t\t/***Call function***/
-\t\t\t{functioncall}
-\t\t/***send return value and output parameters***/
-\t\t\tRPC_push_byte({ID_plus_1});
-\t\t\t{outputParameterSerialization}
-\t\t\tRPC_commit();
-\t\t}}
-\t\tbreak;""".format(
+		/***Call function***/
+			{functioncall}
+		/***send return value and output parameters***/
+			RPC_push_byte({ID_plus_1});
+			{outputParameterSerialization}
+			RPC_commit();
+		}}
+		break;""".format(
     ID = self.ID * 2,
     declaration = self.getDeclaration(),
     parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
@@ -398,22 +406,50 @@ class Function:
     outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
     ID_plus_1 = self.ID * 2 + 1
     )
+    def getAnswerSizeCase(self, buffer):
+        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput(p["parametername"]))
+        retvalsetcode = ""
+        if type(size) == float: #variable length
+            retvalsetcode += """			if (size_bytes >= 3)
+				returnvalue.size = (*(unsigned char *)buffer)[1] + (*(unsigned char *)buffer)[2] << 8;
+			else{
+				returnvalue.size = 3;
+				returnvalue.result = RPC_COMMAND_INCOMPLETE;
+			}"""
+        else:
+            retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
+        return """\t\tcase {ID}: /* {declaration} */
+{retvalsetcode}
+\t\t\tbreak;
+""".format(
+    declaration = self.getDeclaration(),
+    ID = self.ID * 2 + 1,
+    retvalsetcode = retvalsetcode,
+    )
+    def getAnswerParseCase(self, buffer):
+        return """\t\tcase {ID}: /* {declaration} */
+\t\t\tbreak; /*TODO*/
+""".format(
+    ID = self.ID * 2 + 1,
+    declaration = self.getDeclaration(),
+    )
     def getRequestSizeCase(self, buffer):
         size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput(p["parametername"]))
         retvalsetcode = ""
         if type(size) == float: #variable length
-            retvalsetcode += """\t\t\tif (size_bytes >= 3)
-\t\t\t\treturnvalue.size = (*(unsigned char *)buffer)[1] + (*(unsigned char *)buffer)[2] << 8;
-\t\t\telse{
-\t\t\t\treturnvalue.size = 3;
-\t\t\t\treturnvalue.result = RPC_COMMAND_INCOMPLETE;
-\t\t\t}
-\t\t\tbreak;"""
+            retvalsetcode += """			if (size_bytes >= 3)
+				returnvalue.size = (*(unsigned char *)buffer)[1] + (*(unsigned char *)buffer)[2] << 8;
+			else{
+				returnvalue.size = 3;
+				returnvalue.result = RPC_COMMAND_INCOMPLETE;
+			}"""
         else:
-            retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";\n\t\t\tbreak;"
+            retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
         return """
 \t\tcase {answerID}: /* {functiondeclaration} */
-{retvalsetcode}""".format(
+{retvalsetcode}
+\t\t\tbreak;
+""".format(
     answerID = self.ID * 2 + 1,
     retvalsetcode = retvalsetcode,
     functiondeclaration = self.getDeclaration(),
@@ -655,8 +691,8 @@ def getSizeFunction(functions):
 
 /* size is only valid if result equals RPC_SUCCESS. //TODO: Move to header */
 struct RPC_message_size{{
-\tRPC_RESULT result;
-\tsize_t size;
+	RPC_RESULT result;
+	size_t size;
 }};
 
 /* Receives a pointer to a (partly) received message and it's size.
@@ -664,23 +700,23 @@ struct RPC_message_size{{
    size that the message is supposed to have. If result equals RPC_COMMAND_INCOMPLETE
    then more bytes are required to determine the size of the message. In this case
    size is the expected number of bytes required to determine the correct size.*/
-RPC_message_size RPC_get_message_size(const void *buffer, size_t size_bytes){{
-\tconst unsigned char *current = (const unsigned char *)buffer;
-\tstruct RPC_message_size returnvalue = {{RPC_SUCCESS, 0}};
+RPC_message_size RPC_get_request_size(const void *buffer, size_t size_bytes){{
+	const unsigned char *current = (const unsigned char *)buffer;
+	struct RPC_message_size returnvalue = {{RPC_SUCCESS, 0}};
 
-\tif (size_bytes == 0){{
-\t\treturnvalue.result = RPC_COMMAND_INCOMPLETE;
-\t\treturnvalue.size = 1;
-\t\treturn returnvalue;
-\t}}
+	if (size_bytes == 0){{
+		returnvalue.result = RPC_COMMAND_INCOMPLETE;
+		returnvalue.size = 1;
+		return returnvalue;
+	}}
 
-\tswitch (*(const unsigned char *)buffer){{ /* switch by message ID */{}
-\t\tdefault:
-\t\t\treturnvalue.result = RPC_COMMAND_UNKNOWN;
-\t\t\tbreak;
-\t}}
+	switch (*(const unsigned char *)buffer){{ /* switch by message ID */{}
+		default:
+			returnvalue.result = RPC_COMMAND_UNKNOWN;
+			break;
+	}}
 
-\treturn returnvalue;
+	return returnvalue;
 }}
 """.format(
     "".join(f.getRequestSizeCase("current") for f in functions)
@@ -689,29 +725,65 @@ RPC_message_size RPC_get_message_size(const void *buffer, size_t size_bytes){{
 def getRequestParser(functions):
     buffername = "current"
     return """
-/* This function parses RPC-Requests, calls the original function and sends an
+/* This function parses RPC requests, calls the original function and sends an
    answer. */
-void RPC_parse(const void *{1}, size_t size_bytes){{
-\tconst unsigned char *current = (unsigned char *)buffer;
-\tswitch (*current){{{0}
-\t}}
+void RPC_parse_request(const void *{1}, size_t size_bytes){{
+	const unsigned char *current = (unsigned char *)buffer;
+	switch (*current){{{0}
+	}}
 }}""".format(
     "".join(f.getRequestParseCase(buffername) for f in functions), #0
     buffername, #1
     )
 
 def getAnswerParser(functions):
-    buffername = "current"
     return """
-/* This function parses RPC-Requests, calls the original function and sends an
-   answer. */
-void RPC_parse_answer(const void *{1}, size_t size_bytes){{
-\tconst unsigned char *current = (unsigned char *)buffer;
-\tswitch (*current){{{0}
-\t}}
-}}""".format(
-    "".join(f.getAnswerParseCase(buffername) for f in functions), #0
-    buffername, #1
+/* This function pushes the answers to the caller, doing all the necessary synchronization. */
+RPC_SIZE_RESULT RPC_parse_answer(const void *buffer, size_t size_bytes){{
+	RPC_SIZE_RESULT returnvalue = RPC_get_answer_length(buffer, size_bytes);
+	char expected = 1;
+	if (returnvalue.result != RPC_SUCCESS)
+		return returnvalue;
+	current = (const unsigned char *)buffer;
+	do{{
+		if (RPC_mutex_unlock(RPC_mutex_caller_pause)){{ /* succeeded unpausing caller */
+			RPC_mutex_lock(RPC_mutex_parser_pause); /* Pause parser, wait for caller to wake us up */
+			return returnvalue; /* Successfully handed over answer to caller */
+		}}
+		else{{ /* failed unpausing caller */
+			RPC_mutex_lock(RPC_mutex_expected);
+			expected = expecting_answer; /* Is there still a caller waiting? */
+			RPC_mutex_unlock(RPC_mutex_expected);
+		}}
+	}} while (expected);
+	/* Got an invalid answer. Report as success for the network to discard the message. */
+	return returnvalue;
+}}
+""".format(
+    "".join(f.getAnswerParseCase("current") for f in functions),
+    )
+
+def getAnswerSizeChecker(functions):
+    return """/* Get (expected) size of (partial) message. */
+RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size_bytes){{
+	RPC_SIZE_RESULT returnvalue = {{RPC_SUCCESS, 0}};
+	const unsigned char *current = (const unsigned char *)buffer;
+	if (!size_bytes){{
+		returnvalue.result = RPC_COMMAND_INCOMPLETE;
+		returnvalue.size = 1;
+		return returnvalue;
+	}}
+	switch (*current){{
+{answercases}		default:
+			returnvalue.result = RPC_COMMAND_UNKNOWN;
+			return returnvalue;
+	}}
+	if (returnvalue.size < size_bytes)
+		returnvalue.result = RPC_COMMAND_INCOMPLETE;
+	return returnvalue;
+}}
+""".format(
+    answercases = "".join(f.getAnswerSizeCase("current") for f in functions),
     )
 
 functionIgnoreList = []
@@ -771,8 +843,9 @@ def generateCode(file):
     rpcHeader = "\n".join(f.getDeclaration() for f in functionlist) + "\n"
     rpcImplementation = "\n".join(f.getDefinition(0) for f in functionlist) + "\n"
     requestParserImplementation = getSizeFunction(functionlist) + getRequestParser(functionlist)
+    answerSizeChecker = getAnswerSizeChecker(functionlist)
     answerParser = getAnswerParser(functionlist)
-    return rpcHeader, rpcImplementation, requestParserImplementation, answerParser
+    return rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker
 
 def getFilePaths():
     #get paths for various files that need to be created. all created files start with "RPC_"
@@ -816,7 +889,13 @@ externC_outro = """#ifdef __cplusplus
 #endif
 """
 
-rpc_enum = "typedef enum{RPC_SUCCESS, RPC_FAILURE, RPC_COMMAND_UNKNOWN, RPC_COMMAND_INCOMPLETE} RPC_RESULT;\n"
+rpc_enum = """typedef enum{
+    RPC_SUCCESS,
+    RPC_FAILURE,
+    RPC_COMMAND_UNKNOWN,
+    RPC_COMMAND_INCOMPLETE
+} RPC_RESULT;
+"""
 
 def getRPC_serviceHeader(headers):
     return "{doNotModify}{externC_intro}{rpc_declarations}{externC_outro}".format(
@@ -828,12 +907,12 @@ def getRPC_serviceHeader(headers):
 /* Return values used by some RPC functions */
 {}
 typedef struct {{
-\tRPC_RESULT result;
-\tsize_t size;
+	RPC_RESULT result;
+	size_t size;
 }} RPC_SIZE_RESULT;
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   IMPORTANT: The following 3 functions must be implemented by YOU.
+   IMPORTANT: The following functions must be implemented by YOU.
    They are required for the RPC to work.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
    
@@ -847,53 +926,106 @@ void RPC_push_byte(unsigned char byte);
 /* Pushes a byte to be sent via network. You should put all the pushed bytes
    into a buffer and send the buffer when RPC_commit is called. If you run
    out of buffer you can send multiple partial messages as long as the other
-   side can put them back together. */
+   side puts them back together. */
 
-RPC_RESULT RPC_commit();
+RPC_RESULT RPC_commit(void);
 /* This function is called when a complete message has been pushed using
    RPC_push_byte. Now is a good time to send the buffer over the network,
-   even if the buffer is not yet full. You may also want to free the buffer.
+   even if the buffer is not full yet. You may also want to free the buffer that
+   you may have allocated in the RPC_start_message function.
    RPC_commit should return RPC_SUCCESS if the buffer has been successfully
    sent and RPC_FAILURE otherwise. */
+
+typedef enum {{
+    RPC_mutex_sender,
+    RPC_mutex_expected,
+    RPC_mutex_caller,
+    RPC_mutex_caller_pause,
+    RPC_mutex_parser_pause,
+    RPC_mutex_count
+}} RPC_mutex_id;
+#define RPC_number_of_mutex_ids 5
+/* You need to define 5 mutexes to implement the RPC_mutex_* functions below.
+   If the functions do not actually aquire and release mutexes with the described
+   semantics the RPC code will not work. */
+
+void RPC_mutex_lock(RPC_mutex_id mutex_id);
+/* Locks the mutex and waits indefinitely */
+
+char RPC_mutex_unlock(RPC_mutex_id mutex_id);
+/* Unlocks the mutex. Returns 1 if the mutex was locked and 0 otherwise. */
+
+char RPC_mutex_lock_timeout(RPC_mutex_id mutex_id);
+/* Tries to lock a mutex. Returns 1 if the mutex was locked and 0 id a timeout
+   occured. The timeout length should be the time you want to wait for an answer
+   before giving up. If the time is infinite a lost answer will get the calling
+   thread stuck indefinitely. */
+
+void RPC_yield(void);
+/* Gives control to another thread. Can be implemented by sleep(1ms). */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    The following functions's implementations are automatically generated.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+
+void RPC_init(void);
+/* Initializes various states required for the RPC. */
+
+RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size);
+/* Returns the (expected) length of the beginning of a (partial) message.
+   If returnvalue.result equals RPC_SUCCESS then returnvalue.size equals the
+   expected size in bytes.
+   If returnvalue.result equals RPC_COMMAND_UNKNOWN then the buffer does not point
+   to the beginning of a recognized message and returnvalue.size has no meaning.
+   If returnvalue.result equals RPC_COMMAND_INCOMPLETE then returnvalue.size equals
+   the minimum number of bytes required to figure out the length of the message. */
 
 RPC_SIZE_RESULT RPC_parse_answer(const void *buffer, size_t size);
 /* This function parses answer received from the network. {{buffer}} points to the
    buffer that contains the received data and {{size}} contains the number of bytes
    that have been received (NOT the size of the buffer!). This function will wake
    up RPC_*-functions below that are waiting for an answer.
-   //TODO: Document return value */
+   Returns RPC_SUCCESS on successful parse, RPC_COMMAND_INCOMPLETE when the message
+   is incomplete and RPC_COMMAND_UNKNOWN if it is an unknown command. */
 
-/* RPC-Functions provided by the RPC-Generator
-   //TODO: copy comments for documentation */
+/* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+   These are the payload functions made available by the RPC generator.
+   ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+/* //TODO: copy comments for documentation */
 {}
 """.format(
     rpc_enum,
     headers,
     ),)
 
-"""RPC_SIZE_RESULT RPC_parse();
-/* This function parses RPC-Requests, calls the original function and sends an
-   answer. */
-"""
-
 files = getFilePaths()
 
-rpcHeader, rpcImplementation, requestParserImplementation, answerParser = generateCode(files["ServerHeader"])
+rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker = generateCode(files["ServerHeader"])
 
 requestParserImplementation = doNotModifyHeader + requestParserImplementation
 
-rpcImplementation = '{doNotModify}\n#include <stdint.h>\n#include "{rpc_client_header}"\n{implementation}'.format(
+rpcImplementation = '''{doNotModify}
+#include <stdint.h>
+#include "{rpc_client_header}"
+
+static const unsigned char *current;
+
+static unsigned char expecting_answer;
+/* =1 if a caller is waiting for an answer and 0 otherwise*/
+{implementation}'''.format(
     doNotModify = doNotModifyHeader,
     rpc_client_header = "RPC_" + files["ServerHeaderFileName"][:-1] + 'h',
     implementation = rpcImplementation)
 
 for file, data in (
     ("ClientHeader", getRPC_serviceHeader(rpcHeader)),
-    ("ClientImplementation", rpcImplementation + answerParser),
+    ("ClientImplementation", "".join((
+        externC_intro,
+        rpcImplementation,
+        answerSizeChecker,
+        answerParser,
+        externC_outro),
+     )),
     ("RPC_serviceImplementation", requestParserImplementation),
     ):
     f = open(files[file], "w")
