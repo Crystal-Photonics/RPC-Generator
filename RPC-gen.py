@@ -105,14 +105,14 @@ class IntegralDatatype(Datatype):
     identifier = identifier,
     type = self.signature,
     size = self.size_bytes,
-    datapush = "".join(indention * '\t' + "RPC_push_byte(" + IntegralDatatype.getByte(i, identifier) + ");\n" for i in range(self.size_bytes)), #5
+    datapush = "".join(indention * '\t' + "RPC_push_byte((unsigned char)(" + IntegralDatatype.getByte(i, identifier) + "));\n" for i in range(self.size_bytes)), #5
     )
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
             return ""
         return """
 {0}/* reading integral type {3} {1} of size {4} */
-{0}{1} = {2}++;
+{0}{1} = *{2}++;
 {5}""".format(
     indention * '\t', #0
     identifier, #1
@@ -344,38 +344,62 @@ class Function:
             functionname = self.name,
             parameterlist = ", ".join(p["parametername"] for p in self.parameterlist[1:]),
             )
-    def getDefinition(self, indention):
-        #print(self.parameterlist)
+    def getDefinition(self):
         return """
-{indention}RPC_RESULT {functionname}({parameterdeclaration}){{
-{indention}	/***Synchronizing***/
-{indention}		RPC_mutex_lock(RPC_mutex_caller);
-{indention}		RPC_mutex_lock(RPC_mutex_expected);
-{indention}		expecting_answer = 1;
-{indention}		RPC_mutex_unlock(RPC_mutex_expected);
-{indention}		RPC_mutex_lock(RPC_mutex_sender);
+RPC_RESULT {functionname}({parameterdeclaration}){{
+	RPC_RESULT result;
+	/***Synchronizing***/
+	RPC_mutex_lock(RPC_mutex_caller);
+	RPC_mutex_lock(RPC_mutex_expected);
+	expecting_answer = 1;
+	RPC_mutex_unlock(RPC_mutex_expected);
+	RPC_mutex_lock(RPC_mutex_sender);
 
-{indention}	/***Serializing***/
-{indention}		RPC_push_byte({ID}); /* save ID */
+	/***Serializing***/
+	RPC_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-{indention}		RPC_mutex_unlock(RPC_mutex_sender);
+	RPC_mutex_unlock(RPC_mutex_sender);
 
-{indention}	/***Communication***/
-{indention}		RPC_commit();
-{indention}		RPC_mutex_lock(RPC_mutex_sender);
-{indention}		//TODO: check commit result
-
-{indention}	/***Deserializing***/
-{indention}		{outputParameterDeserialization}
-{indention}		return RPC_SUCCESS;
-{indention}}}
+	/***Communication***/
+	result = RPC_commit();
+	RPC_mutex_lock(RPC_mutex_sender);
+	if (result == RPC_SUCCESS){{ /* successfully sent request */
+		for (;;){{
+			if (RPC_mutex_lock_timeout(RPC_mutex_caller_pause)){{ /* Paused self and got unpaused */
+				/***Deserializing***/
+				if (*current++ != {answerID}){{ /* We got an incorrect answer */
+					RPC_mutex_unlock(RPC_mutex_parser_pause); /* Unpause parser and release buffer */
+					continue; /* Try again */
+				}}
+{outputParameterDeserialization}
+				RPC_mutex_unlock(RPC_mutex_parser_pause); /* Unpause parser and release buffer */
+				RPC_mutex_lock(RPC_mutex_expected);
+				expecting_answer = 0;
+				RPC_mutex_unlock(RPC_mutex_expected);
+				RPC_mutex_unlock(RPC_mutex_caller);
+				return RPC_SUCCESS;
+			}}
+			else {{ /* Paused self and got timeout, so we failed to get an answer */
+				RPC_mutex_lock(RPC_mutex_expected);
+				expecting_answer = 0;
+				RPC_mutex_unlock(RPC_mutex_expected);
+				RPC_mutex_unlock(RPC_mutex_caller);
+				return RPC_FAILURE;
+			}}
+		}}
+	}}
+	else {{ /* Sending request failed */
+		RPC_mutex_unlock(RPC_mutex_caller);
+		return RPC_FAILURE;
+	}}
+}}
 """.format(
-    indention = indention * '\t',
-    ID = self.ID * 2,
-    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], indention + 2) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    requestID = self.ID * 2,
+    answerID = self.ID * 2 + 1,
+    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 1) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
-    outputParameterDeserialization = "".join(p["parameter"].unstringify("current", p["parametername"], indention + 2) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])), #7
+    outputParameterDeserialization = "".join(p["parameter"].unstringify("current", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])), #7
     )
     def getDeclaration(self):
         return "RPC_RESULT {0}({1});".format(
@@ -764,7 +788,7 @@ RPC_SIZE_RESULT RPC_parse_answer(const void *buffer, size_t size_bytes){{
     )
 
 def getAnswerSizeChecker(functions):
-    return """/* Get (expected) size of (partial) message. */
+    return """/* Get (expected) size of (partial) answer. */
 RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size_bytes){{
 	RPC_SIZE_RESULT returnvalue = {{RPC_SUCCESS, 0}};
 	const unsigned char *current = (const unsigned char *)buffer;
@@ -841,7 +865,7 @@ def generateCode(file):
         if not f["name"] in functionIgnoreList:
             functionlist.append(getFunction(f))
     rpcHeader = "\n".join(f.getDeclaration() for f in functionlist) + "\n"
-    rpcImplementation = "\n".join(f.getDefinition(0) for f in functionlist) + "\n"
+    rpcImplementation = "\n".join(f.getDefinition() for f in functionlist) + "\n"
     requestParserImplementation = getSizeFunction(functionlist) + getRequestParser(functionlist)
     answerSizeChecker = getAnswerSizeChecker(functionlist)
     answerParser = getAnswerParser(functionlist)
