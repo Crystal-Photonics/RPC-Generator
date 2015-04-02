@@ -347,7 +347,6 @@ class Function:
     def getDefinition(self):
         return """
 RPC_RESULT {functionname}({parameterdeclaration}){{
-	RPC_RESULT result;
 	RPC_mutex_lock(RPC_mutex_caller);
 	
 	for (;;){{
@@ -356,9 +355,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 		/***Serializing***/
 		RPC_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-		result = RPC_commit();
-
-		if (result == RPC_SUCCESS){{ /* successfully sent request */
+		if (RPC_commit() == RPC_SUCCESS){{ /* successfully sent request */
 			if (RPC_mutex_lock_timeout(RPC_mutex_answer)){{ /* Wait for answer to arrive */
 				if (*RPC_buffer++ != {answerID}){{ /* We got an incorrect answer */
 					RPC_mutex_unlock(RPC_mutex_in_caller);
@@ -708,7 +705,7 @@ def getGenericHeader(version):
 """.format(version, getNonstandardTypedefs())
 
 def getSizeFunction(functions):
-    return """#include <stddef.h> /* for size_t */
+    return """#include <stddef.h>
 
 /* size is only valid if result equals RPC_SUCCESS. //TODO: Move to header */
 struct RPC_message_size{{
@@ -774,14 +771,25 @@ void RPC_parse_answer(const void *buffer, size_t size_bytes){
 }
 """
 
-def getRPC_init():
+def getRPC_Parser_init():
     return """
-void RPC_init(){
-	static char initialized;
-	if (initialized)
+void RPC_Parser_init(){
+	if (RPC_initialized)
 		return;
+	RPC_initialized = 1;
 	RPC_mutex_lock(RPC_mutex_parsing_complete);
 	RPC_mutex_lock(RPC_mutex_answer);
+}
+"""
+
+def getRPC_Parser_exit():
+    return """
+void RPC_Parser_exit(){
+	if (!RPC_initialized)
+		return;
+	RPC_initialized = 0;
+	RPC_mutex_unlock(RPC_mutex_parsing_complete);
+	RPC_mutex_unlock(RPC_mutex_answer);
 }
 """
 
@@ -933,7 +941,8 @@ def getRPC_serviceHeader(headers, headername):
 #define {}
 """.format(headerDefine, headerDefine),
         includeguardoutro = """#endif /* not {} */""".format(headerDefine),
-        rpc_declarations = """#include <stddef.h> /* for size_t */
+        rpc_declarations = """#include <stddef.h>
+#include <inttypes.h>
 
 /* Return values used by some RPC functions */
 {}
@@ -991,15 +1000,16 @@ char RPC_mutex_lock_timeout(RPC_mutex_id mutex_id);
    before giving up. If the time is infinite a lost answer will get the calling
    thread stuck indefinitely. */
 
-void RPC_yield(void);
-/* Gives control to another thread. Can be implemented by sleep(1ms). */
-
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    The following functions's implementations are automatically generated.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
-void RPC_init(void);
+void RPC_Parser_init(void);
 /* Initializes various states required for the RPC. Must be called before any
+   other RPC_* function. Must be called by the parser thread. */
+
+void RPC_Parser_exit(void);
+/* Frees various states required for the RPC. Must be called after any
    other RPC_* function */
 
 RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size);
@@ -1043,6 +1053,7 @@ rpcImplementation = '''{doNotModify}
 #include "{rpc_client_header}"
 
 static const unsigned char *RPC_buffer;
+static char RPC_initialized;
 
 {implementation}{externC_outro}
 '''.format(
@@ -1059,7 +1070,8 @@ for file, data in (
         rpcImplementation,
         answerSizeChecker,
         answerParser,
-        getRPC_init(),
+        getRPC_Parser_init(),
+        getRPC_Parser_exit(),
         externC_outro),
      )),
     ("RPC_serviceImplementation", requestParserImplementation),
