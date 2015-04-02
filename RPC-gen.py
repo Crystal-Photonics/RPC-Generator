@@ -348,58 +348,55 @@ class Function:
         return """
 RPC_RESULT {functionname}({parameterdeclaration}){{
 	RPC_RESULT result;
-	/***Synchronizing***/
 	RPC_mutex_lock(RPC_mutex_caller);
-	RPC_mutex_lock(RPC_mutex_expected);
-	expecting_answer = 1;
-	RPC_mutex_unlock(RPC_mutex_expected);
-	RPC_mutex_lock(RPC_mutex_sender);
+	
+	for (;;){{
+		RPC_mutex_lock(RPC_mutex_in_caller);
 
-	/***Serializing***/
-	RPC_push_byte({requestID}); /* save ID */
+		/***Serializing***/
+		RPC_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-	RPC_mutex_unlock(RPC_mutex_sender);
+		result = RPC_commit();
 
-	/***Communication***/
-	result = RPC_commit();
-	RPC_mutex_lock(RPC_mutex_sender);
-	if (result == RPC_SUCCESS){{ /* successfully sent request */
-		for (;;){{
-			if (RPC_mutex_lock_timeout(RPC_mutex_caller_pause)){{ /* Paused self and got unpaused */
-				/***Deserializing***/
-				if (*current++ != {answerID}){{ /* We got an incorrect answer */
-					RPC_mutex_unlock(RPC_mutex_parser_pause); /* Unpause parser and release buffer */
-					continue; /* Try again */
+		if (result == RPC_SUCCESS){{ /* successfully sent request */
+			if (RPC_mutex_lock_timeout(RPC_mutex_answer)){{ /* Wait for answer to arrive */
+				if (*RPC_buffer++ != {answerID}){{ /* We got an incorrect answer */
+					RPC_mutex_unlock(RPC_mutex_in_caller);
+					RPC_mutex_lock(RPC_mutex_parsing_complete);
+					RPC_mutex_unlock(RPC_mutex_parsing_complete);
+					RPC_mutex_unlock(RPC_mutex_answer);
+					continue; /* Try if next answer is correct */
 				}}
+				/***Deserializing***/
 {outputParameterDeserialization}
-				RPC_mutex_unlock(RPC_mutex_parser_pause); /* Unpause parser and release buffer */
-				RPC_mutex_lock(RPC_mutex_expected);
-				expecting_answer = 0;
-				RPC_mutex_unlock(RPC_mutex_expected);
+				RPC_mutex_unlock(RPC_mutex_in_caller);
+				RPC_mutex_lock(RPC_mutex_parsing_complete);
+				RPC_mutex_unlock(RPC_mutex_parsing_complete);
+				RPC_mutex_unlock(RPC_mutex_answer);
 				RPC_mutex_unlock(RPC_mutex_caller);
 				return RPC_SUCCESS;
 			}}
-			else {{ /* Paused self and got timeout, so we failed to get an answer */
-				RPC_mutex_lock(RPC_mutex_expected);
-				expecting_answer = 0;
-				RPC_mutex_unlock(RPC_mutex_expected);
+			else {{ /* We failed to get an answer due to timeout */
+				RPC_mutex_unlock(RPC_mutex_in_caller);
 				RPC_mutex_unlock(RPC_mutex_caller);
 				return RPC_FAILURE;
 			}}
 		}}
+		else {{ /* Sending request failed */
+			RPC_mutex_unlock(RPC_mutex_in_caller);
+			RPC_mutex_unlock(RPC_mutex_caller);
+			return RPC_FAILURE;
+		}}
 	}}
-	else {{ /* Sending request failed */
-		RPC_mutex_unlock(RPC_mutex_caller);
-		return RPC_FAILURE;
-	}}
+	/* assert_dead_code; */
 }}
 """.format(
     requestID = self.ID * 2,
     answerID = self.ID * 2 + 1,
-    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 1) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 2) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
-    outputParameterDeserialization = "".join(p["parameter"].unstringify("current", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])), #7
+    outputParameterDeserialization = "".join(p["parameter"].unstringify("RPC_buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
     )
     def getDeclaration(self):
         return "RPC_RESULT {0}({1});".format(
@@ -763,29 +760,30 @@ void RPC_parse_request(const void *{1}, size_t size_bytes){{
 def getAnswerParser(functions):
     return """
 /* This function pushes the answers to the caller, doing all the necessary synchronization. */
-RPC_SIZE_RESULT RPC_parse_answer(const void *buffer, size_t size_bytes){{
-	RPC_SIZE_RESULT returnvalue = RPC_get_answer_length(buffer, size_bytes);
-	char expected = 1;
-	if (returnvalue.result != RPC_SUCCESS)
-		return returnvalue;
-	current = (const unsigned char *)buffer;
-	do{{
-		if (RPC_mutex_unlock(RPC_mutex_caller_pause)){{ /* succeeded unpausing caller */
-			RPC_mutex_lock(RPC_mutex_parser_pause); /* Pause parser, wait for caller to wake us up */
-			return returnvalue; /* Successfully handed over answer to caller */
-		}}
-		else{{ /* failed unpausing caller */
-			RPC_mutex_lock(RPC_mutex_expected);
-			expected = expecting_answer; /* Is there still a caller waiting? */
-			RPC_mutex_unlock(RPC_mutex_expected);
-		}}
-	}} while (expected);
-	/* Got an invalid answer. Report as success for the network to discard the message. */
-	return returnvalue;
-}}
-""".format(
-    "".join(f.getAnswerParseCase("current") for f in functions),
-    )
+void RPC_parse_answer(const void *buffer, size_t size_bytes){
+	RPC_buffer = (const unsigned char *)buffer;
+	assert(RPC_get_answer_length(buffer, size_bytes).result == RPC_SUCCESS);
+	assert(RPC_get_answer_length(buffer, size_bytes).size <= size_bytes);
+
+	RPC_mutex_unlock(RPC_mutex_answer);
+	RPC_mutex_lock(RPC_mutex_in_caller);
+	RPC_mutex_unlock(RPC_mutex_parsing_complete);
+	RPC_mutex_lock(RPC_mutex_answer);
+	RPC_mutex_lock(RPC_mutex_parsing_complete);
+	RPC_mutex_unlock(RPC_mutex_in_caller);
+}
+"""
+
+def getRPC_init():
+    return """
+void RPC_init(){
+	static char initialized;
+	if (initialized)
+		return;
+	RPC_mutex_lock(RPC_mutex_parsing_complete);
+	RPC_mutex_lock(RPC_mutex_answer);
+}
+"""
 
 def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
@@ -864,8 +862,8 @@ def generateCode(file):
     for f in ast.functions:
         if not f["name"] in functionIgnoreList:
             functionlist.append(getFunction(f))
-    rpcHeader = "\n".join(f.getDeclaration() for f in functionlist) + "\n"
-    rpcImplementation = "\n".join(f.getDefinition() for f in functionlist) + "\n"
+    rpcHeader = "\n".join(f.getDeclaration() for f in functionlist)
+    rpcImplementation = "\n".join(f.getDefinition() for f in functionlist)
     requestParserImplementation = getSizeFunction(functionlist) + getRequestParser(functionlist)
     answerSizeChecker = getAnswerSizeChecker(functionlist)
     answerParser = getAnswerParser(functionlist)
@@ -906,7 +904,8 @@ externC_intro = """#ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 """
-externC_outro = """#ifdef __cplusplus
+externC_outro = """
+#ifdef __cplusplus
 }
 #endif /* __cplusplus */
 """
@@ -924,8 +923,7 @@ def getRPC_serviceHeader(headers, headername):
     return """{doNotModify}
 {includeguardintro}
 {externC_intro}
-{rpc_declarations}
-{externC_outro}
+{rpc_declarations}{externC_outro}
 {includeguardoutro}
 """.format(
         doNotModify = doNotModifyHeader,
@@ -952,14 +950,14 @@ typedef struct {{
 void RPC_start_message(size_t size);
 /*  This function is called when a new message starts. {{size}} is the number of
     bytes the message will require. In the implementation you can allocate  a
-    buffers or write a preamble. The implementation can be empty if you do not
+    buffer or write a preamble. The implementation can be empty if you do not
     need to do that. */
 
 void RPC_push_byte(unsigned char byte);
 /* Pushes a byte to be sent via network. You should put all the pushed bytes
    into a buffer and send the buffer when RPC_commit is called. If you run
-   out of buffer you can send multiple partial messages as long as the other
-   side puts them back together. */
+   out of buffer space you can send multiple partial messages as long as the
+   other side puts them back together. */
 
 RPC_RESULT RPC_commit(void);
 /* This function is called when a complete message has been pushed using
@@ -970,15 +968,14 @@ RPC_RESULT RPC_commit(void);
    sent and RPC_FAILURE otherwise. */
 
 typedef enum {{
-    RPC_mutex_sender,
-    RPC_mutex_expected,
+    RPC_mutex_parsing_complete,
     RPC_mutex_caller,
-    RPC_mutex_caller_pause,
-    RPC_mutex_parser_pause,
-    RPC_mutex_count
+    RPC_mutex_in_caller,
+    RPC_mutex_answer,
+    RPC_MUTEX_COUNT
 }} RPC_mutex_id;
-#define RPC_number_of_mutex_ids 5
-/* You need to define 5 mutexes to implement the RPC_mutex_* functions below.
+#define RPC_number_of_mutexes 4
+/* You need to define 4 mutexes to implement the RPC_mutex_* functions below.
    If the functions do not actually aquire and release mutexes with the described
    semantics the RPC code will not work. */
 
@@ -1002,7 +999,8 @@ void RPC_yield(void);
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
 void RPC_init(void);
-/* Initializes various states required for the RPC. */
+/* Initializes various states required for the RPC. Must be called before any
+   other RPC_* function */
 
 RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size);
 /* Returns the (expected) length of the beginning of a (partial) message.
@@ -1013,13 +1011,13 @@ RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size);
    If returnvalue.result equals RPC_COMMAND_INCOMPLETE then returnvalue.size equals
    the minimum number of bytes required to figure out the length of the message. */
 
-RPC_SIZE_RESULT RPC_parse_answer(const void *buffer, size_t size);
+void RPC_parse_answer(const void *buffer, size_t size);
 /* This function parses answer received from the network. {{buffer}} points to the
    buffer that contains the received data and {{size}} contains the number of bytes
    that have been received (NOT the size of the buffer!). This function will wake
    up RPC_*-functions below that are waiting for an answer.
-   Returns RPC_SUCCESS on successful parse, RPC_COMMAND_INCOMPLETE when the message
-   is incomplete and RPC_COMMAND_UNKNOWN if it is an unknown command. */
+   Do not call this function with an incomplete message. Use RPC_get_answer_length
+   to make sure it is a complete message. */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    These are the payload functions made available by the RPC generator.
@@ -1038,25 +1036,30 @@ rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerS
 requestParserImplementation = doNotModifyHeader + requestParserImplementation
 
 rpcImplementation = '''{doNotModify}
+{externC_intro}
+
 #include <stdint.h>
+#include <assert.h>
 #include "{rpc_client_header}"
 
-static const unsigned char *current;
+static const unsigned char *RPC_buffer;
 
-static unsigned char expecting_answer;
-/* =1 if a caller is waiting for an answer and 0 otherwise*/
-{implementation}'''.format(
+{implementation}{externC_outro}
+'''.format(
     doNotModify = doNotModifyHeader,
     rpc_client_header = "RPC_" + files["ServerHeaderFileName"][:-1] + 'h',
-    implementation = rpcImplementation)
+    implementation = rpcImplementation,
+    externC_outro = externC_outro,
+    externC_intro = externC_intro,
+    )
 
 for file, data in (
     ("ClientHeader", getRPC_serviceHeader(rpcHeader, "RPC_" + files["ServerHeaderFileName"][:-2] + '_H')),
     ("ClientImplementation", "".join((
-        externC_intro,
         rpcImplementation,
         answerSizeChecker,
         answerParser,
+        getRPC_init(),
         externC_outro),
      )),
     ("RPC_serviceImplementation", requestParserImplementation),
