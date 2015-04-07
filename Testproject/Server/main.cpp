@@ -35,8 +35,8 @@ void parser(){
 }
 
 void logic(){
-	int32_t result;
 	for (int i = 0; i < 10; ++i){
+		int32_t result;
 		if (square(&result, 42) == RPC_SUCCESS){
 			std::cout << "square of " << 42 << " is " << result << '\n';
 		}
