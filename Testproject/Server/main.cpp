@@ -1,31 +1,21 @@
 #include <iostream>
 #include "RPC_client.h"
 #include <thread>
-#include <fstream>
 #include <cassert>
 #include <vector>
 #include <atomic>
+#include "socket.h"
 
 std::atomic<bool> quitParser = false;
 
 void parser(){
-	std::ifstream input("server_in.bin", std::ifstream::binary);
-	assert(input.good());
+	auto connection = Socket::waitForConnection(1192);
 	std::vector<unsigned char> buffer;
-	auto sleepUntilRead = [&]{
-		while (input.gcount() == 0){
-			if (quitParser)
-				return;
-			std::this_thread::sleep_for(std::chrono::milliseconds(128));
-		}
-		const auto amount = input.gcount();
-		buffer.resize(buffer.size() + amount);
-		const auto recieved = input.readsome(reinterpret_cast<char *>(&buffer[buffer.size() - amount]), amount);
-		assert(recieved == amount);
-	};
 	for (; !quitParser;){
 		do{
-			sleepUntilRead();
+			unsigned char c;
+			connection.receiveData(&c, 1);
+			buffer.push_back(c);
 			if (quitParser)
 				return;
 		} while (RPC_get_answer_length(buffer.data(), buffer.size()).result == RPC_COMMAND_INCOMPLETE);
