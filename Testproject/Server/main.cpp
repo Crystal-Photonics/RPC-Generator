@@ -9,18 +9,22 @@
 std::atomic<bool> quitParser = false;
 
 void parser(){
-	auto connection = Socket::waitForConnection(1192);
-	std::vector<unsigned char> buffer;
 	for (; !quitParser;){
-		do{
-			unsigned char c;
-			connection.receiveData(&c, 1);
-			buffer.push_back(c);
-			if (quitParser)
-				return;
-		} while (RPC_get_answer_length(buffer.data(), buffer.size()).result == RPC_COMMAND_INCOMPLETE);
-		RPC_parse_answer(buffer.data(), buffer.size());
-		buffer.clear();
+		auto connection = Socket::waitForConnection("127.0.0.1", 1192, std::chrono::milliseconds(100));
+		if (!connection)
+			continue;
+		std::vector<unsigned char> buffer;
+		for (; !quitParser;){
+			do{
+				unsigned char c;
+				connection->receiveData(&c, 1);
+				buffer.push_back(c);
+				if (quitParser)
+					return;
+			} while (RPC_get_answer_length(buffer.data(), buffer.size()).result == RPC_COMMAND_INCOMPLETE);
+			RPC_parse_answer(buffer.data(), buffer.size());
+			buffer.clear();
+		}
 	}
 }
 
