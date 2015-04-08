@@ -7,6 +7,10 @@
 
 class Socket{
 public:
+	const static unsigned short int serverListenPort = 1192;
+	const static unsigned short int serverConnectPort = 1192;
+	//if you set serverListenPort and serverConnectPort to different values you can
+	//monitor, manipulate and forward data sent between client and server
 	static Socket getConnection(
 		const char *ip,
 		unsigned short int port

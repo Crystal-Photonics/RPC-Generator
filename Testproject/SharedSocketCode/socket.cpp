@@ -158,7 +158,7 @@ s(INVALID_SOCKET){
 }
 
 SocketImplementation::~SocketImplementation(){
-	if (closesocket(s))
+	if (s != INVALID_SOCKET && closesocket(s))
 		throw std::runtime_error("closesocket failed with error " + std::to_string(WSAGetLastError()));
 }
 

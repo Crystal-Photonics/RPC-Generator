@@ -4,15 +4,16 @@
 #include <cassert>
 #include <vector>
 #include <atomic>
-#include "socket.h"
+#include "../SharedSocketCode/socket.h"
 
 std::atomic<bool> quitParser = false;
 
 void parser(){
 	for (; !quitParser;){
-		auto connection = Socket::waitForConnection("127.0.0.1", 1192, std::chrono::milliseconds(100));
+		auto connection = Socket::waitForConnection("127.0.0.1", Socket::serverListenPort, std::chrono::minutes(1));
 		if (!connection)
 			continue;
+		std::cout << "connection established\n";
 		std::vector<unsigned char> buffer;
 		for (; !quitParser;){
 			do{
@@ -29,7 +30,9 @@ void parser(){
 }
 
 void logic(){
-	for (int i = 0; i < 10; ++i){
+	for (;;)
+		std::this_thread::sleep_for(std::chrono::hours(365));
+	for (;;){
 		int32_t result;
 		if (square(&result, 42) == RPC_SUCCESS){
 			std::cout << "square of " << 42 << " is " << result << '\n';

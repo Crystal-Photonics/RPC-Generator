@@ -4,10 +4,11 @@
 #include <cassert>
 #include <mutex>
 #include <chrono>
+#include "../SharedSocketCode/socket.h"
 
 auto timeout = std::chrono::milliseconds(500);
 std::vector<unsigned char> buffer;
-std::ofstream sendStream("server_out.bin", std::ofstream::binary | std::ofstream::trunc);
+Socket socket;
 std::timed_mutex mutexes[RPC_number_of_mutexes];
 
 extern "C" {
@@ -33,9 +34,7 @@ extern "C" {
 		you may have allocated in the RPC_start_message function.
 		RPC_commit should return RPC_SUCCESS if the buffer has been successfully
 		sent and RPC_FAILURE otherwise. */
-		assert(sendStream.is_open());
-		sendStream.write(reinterpret_cast<const char *>(buffer.data()), buffer.size());
-		assert(sendStream.good());
+		socket.sendData(buffer.data(), buffer.size());
 		buffer.clear();
 		return RPC_SUCCESS;
 	}
