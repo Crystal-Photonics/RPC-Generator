@@ -8,7 +8,7 @@
 
 auto timeout = std::chrono::milliseconds(500);
 std::vector<unsigned char> buffer;
-Socket socket;
+std::shared_ptr<Socket> socket; //using shared_ptr for it's thread safety, not for sharing
 std::timed_mutex mutexes[RPC_number_of_mutexes];
 
 extern "C" {
@@ -34,7 +34,7 @@ extern "C" {
 		you may have allocated in the RPC_start_message function.
 		RPC_commit should return RPC_SUCCESS if the buffer has been successfully
 		sent and RPC_FAILURE otherwise. */
-		socket.sendData(buffer.data(), buffer.size());
+		socket->sendData(buffer.data(), buffer.size());
 		buffer.clear();
 		return RPC_SUCCESS;
 	}

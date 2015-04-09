@@ -38,7 +38,7 @@ private:
 		hints.ai_protocol = IPPROTO_TCP;
 		if (getaddrinfo(ip, std::to_string(port).c_str(), &hints, &result))
 			throw std::runtime_error("getaddrinfo failed with error " + std::to_string(WSAGetLastError()));
-		auto s = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+		s = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
 		try{
 			std::forward<Function>(connector)(s, result);
 		}
@@ -49,7 +49,6 @@ private:
 			throw;
 		}
 	}
-	struct ConnectionClosed{};
 	struct ConnectionTimeoutException{};
 };
 
@@ -144,10 +143,10 @@ void SocketImplementation::receiveData(void *buffer, size_t size){
 	auto res = 0;
 	do {
 		res = recv(s, static_cast<char *>(buffer)+res, size - res, 0);
+		if (size == res)
+			return;
 	} while (res > 0);
-	if (res == 0)
-		throw SocketImplementation::ConnectionClosed();
-	throw std::runtime_error("recv failed with error " + std::to_string(WSAGetLastError()));
+	throw Socket::ConnectionClosed();
 }
 
 
@@ -158,8 +157,7 @@ s(INVALID_SOCKET){
 }
 
 SocketImplementation::~SocketImplementation(){
-	if (s != INVALID_SOCKET && closesocket(s))
-		throw std::runtime_error("closesocket failed with error " + std::to_string(WSAGetLastError()));
+	closesocket(s);
 }
 
 #else

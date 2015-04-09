@@ -36,6 +36,7 @@ public:
 	Socket(
 		Socket &&other);
 	~Socket();
+	struct ConnectionClosed{}; //exception thrown when trying to send or receive data on closed connection
 private:
 	Socket(
 		void *);

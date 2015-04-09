@@ -468,7 +468,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 {retvalsetcode}
 \t\t\tbreak;
 """.format(
-    answerID = self.ID * 2 + 1,
+    answerID = self.ID * 2,
     retvalsetcode = retvalsetcode,
     functiondeclaration = self.getDeclaration(),
     )
@@ -715,7 +715,7 @@ def getSizeFunction(functions, clientHeader):
    size is the expected number of bytes required to determine the correct size.*/
 RPC_SIZE_RESULT RPC_get_request_size(const void *buffer, size_t size_bytes){{
 	const unsigned char *current = (const unsigned char *)buffer;
-	RPC_SIZE_RESULT returnvalue = {{RPC_SUCCESS, 0}};
+	RPC_SIZE_RESULT returnvalue;
 
 	if (size_bytes == 0){{
 		returnvalue.result = RPC_COMMAND_INCOMPLETE;
@@ -723,12 +723,12 @@ RPC_SIZE_RESULT RPC_get_request_size(const void *buffer, size_t size_bytes){{
 		return returnvalue;
 	}}
 
-	switch (*(const unsigned char *)buffer){{ /* switch by message ID */{}
+	switch (*current){{ /* switch by message ID */{}
 		default:
 			returnvalue.result = RPC_COMMAND_UNKNOWN;
 			break;
 	}}
-
+	returnvalue.result = returnvalue.size > size_bytes ? RPC_COMMAND_INCOMPLETE : RPC_SUCCESS;
 	return returnvalue;
 }}
 """.format(
@@ -743,7 +743,7 @@ def getRequestParser(functions):
    answer. */
 void RPC_parse_request(const void *buffer, size_t size_bytes){{
 	const unsigned char *{1} = (const unsigned char *)buffer;
-	switch (*current){{{0}
+	switch (*current++){{ /* switch (request ID) */ {0}
 	}}
 }}""".format(
     "".join(f.getRequestParseCase(buffername) for f in functions), #0
@@ -792,7 +792,7 @@ void RPC_Parser_exit(){
 def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
 RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size_bytes){{
-	RPC_SIZE_RESULT returnvalue = {{RPC_SUCCESS, 0}};
+	RPC_SIZE_RESULT returnvalue;
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
 		returnvalue.result = RPC_COMMAND_INCOMPLETE;
@@ -804,8 +804,7 @@ RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size_bytes){{
 			returnvalue.result = RPC_COMMAND_UNKNOWN;
 			return returnvalue;
 	}}
-	if (returnvalue.size < size_bytes)
-		returnvalue.result = RPC_COMMAND_INCOMPLETE;
+	returnvalue.result = returnvalue.size > size_bytes ? RPC_COMMAND_INCOMPLETE : RPC_SUCCESS;
 	return returnvalue;
 }}
 """.format(
