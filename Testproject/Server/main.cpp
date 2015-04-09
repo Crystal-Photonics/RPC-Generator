@@ -91,6 +91,18 @@ void logic(){
 				else{
 					std::cout << "failed calling function square\n";
 				}
+				if (sayHello() == RPC_SUCCESS){
+					std::cout << "said hello\n";
+				}
+				else{
+					std::cout << "failed calling function sayHello\n";
+				}
+				if (square2(&result, 42) == RPC_SUCCESS){
+					std::cout << "calculated square2 of " << 42 << ", but didn't send result\n";
+				}
+				else{
+					std::cout << "failed calling function square2\n";
+				}
 				std::this_thread::sleep_for(std::chrono::seconds(1));
 			}
 		}

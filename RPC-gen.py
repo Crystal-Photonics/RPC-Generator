@@ -239,6 +239,7 @@ class PointerDatatype(Datatype):
     #need to be mindful of parring, otherwise it is a variable sized loop
     #if the pointer is used for input, output or both depends on the name, for example p_in, p_out or p_inout
     def __init__(self, signature, datatype, parametername):
+        assert None, "Code for pointers does not work yet"
         self.signature = signature
         self.datatype = datatype
         self.In = parametername.endswith("_in") or parametername.endswith("_inout")
@@ -335,7 +336,7 @@ class Function:
             parameterdeclaration = "void"
         return parameterdeclaration
     def getCall(self):
-        print(self.name, self.parameterlist)
+        #print(self.name, self.parameterlist)
         returnvalue = "*return_value_out = " if not self.isVoidReturnType else ""
         parameterlist = self.parameterlist if self.isVoidReturnType else self.parameterlist[1:]
         return "{returnvalue}{functionname}({parameterlist});".format(
@@ -344,6 +345,30 @@ class Function:
             parameterlist = ", ".join(p["parametername"] for p in parameterlist),
             )
     def getDefinition(self):
+        if self.name in functionNoAnswerList:
+            return """
+RPC_RESULT {functionname}({parameterdeclaration}){{
+	RPC_RESULT result;
+	RPC_mutex_lock(RPC_mutex_caller);
+	RPC_mutex_lock(RPC_mutex_in_caller);
+
+	/***Serializing***/
+	RPC_push_byte({requestID}); /* save ID */
+{inputParameterSerializationCode}
+	result = RPC_commit();
+
+	/* This function has been set to receive no answer */
+
+	RPC_mutex_unlock(RPC_mutex_in_caller);
+	RPC_mutex_unlock(RPC_mutex_caller);
+	return result;
+}}
+""".format(
+    requestID = self.ID * 2,
+    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 1) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    functionname = self.name,
+    parameterdeclaration = self.getParameterDeclaration(),
+    )
         return """
 RPC_RESULT {functionname}({parameterdeclaration}){{
 	RPC_mutex_lock(RPC_mutex_caller);
@@ -400,6 +425,25 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
             self.getParameterDeclaration(), #1
             )
     def getRequestParseCase(self, buffer):
+        if self.name in functionNoAnswerList:
+            return """
+		case {ID}: /* {declaration} */
+		{{
+		/* Declarations */
+{parameterdeclarations}
+		/* Read input parameters */
+{inputParameterDeserialization}
+		/* Call function */
+			{functioncall}
+		/* This function has been set to receive no answer */
+		}}
+		break;""".format(
+    ID = self.ID * 2,
+    declaration = self.getDeclaration(),
+    parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
+    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    functioncall = self.getCall(),
+    )
         return """
 		case {ID}: /* {declaration} */
 		{{
@@ -424,6 +468,13 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     ID_plus_1 = self.ID * 2 + 1
     )
     def getAnswerSizeCase(self, buffer):
+        if self.name in functionNoAnswerList:
+            return """\t\t/* case {ID}: {declaration}
+\t\t\tThis function has been set to receive no answer */
+""".format(
+    declaration = self.getDeclaration(),
+    ID = self.ID * 2 + 1,
+    )
         size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput(p["parametername"]))
         retvalsetcode = ""
         if type(size) == float: #variable length
@@ -444,6 +495,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     retvalsetcode = retvalsetcode,
     )
     def getAnswerParseCase(self, buffer):
+        if self.name in functionNoAnswerList:
+            return ""
         return """\t\tcase {ID}: /* {declaration} */
 \t\t\tbreak; /*TODO*/
 """.format(
@@ -811,6 +864,7 @@ RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size_bytes){{
     )
 
 functionIgnoreList = []
+functionNoAnswerList = []
 def evaluatePragmas(pragmas):
     for p in pragmas:
         program, command = p.split(" ", 1)
@@ -822,6 +876,8 @@ def evaluatePragmas(pragmas):
             if command == "ignore":
                 assert len(target.split(" ")) == 1, "Invalid function name: {} in {}".format(target, currentFile)
                 functionIgnoreList.append(target)
+            elif command == "noanswer":
+                functionNoAnswerList.append(target)
             else:
                 assert False, "Unknown command {} in {}".format(command, currentFile)
 
@@ -1082,48 +1138,54 @@ void RPC_parse_request(const void *buffer, size_t size_bytes);
 {}
 """.format(doNotModifyHeader, externC_intro, externC_outro)
 
-files = getFilePaths()
+try:
+    files = getFilePaths()
 
-rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker = generateCode(files["ServerHeader"])
+    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker = generateCode(files["ServerHeader"])
 
-requestParserImplementation = doNotModifyHeader + '\n' + requestParserImplementation
+    requestParserImplementation = doNotModifyHeader + '\n' + requestParserImplementation
 
-rpcImplementation = '''{doNotModify}
-{externC_intro}
+    rpcImplementation = '''{doNotModify}
+    {externC_intro}
 
-#include <stdint.h>
-#include <assert.h>
-#include "{rpc_client_header}"
+    #include <stdint.h>
+    #include <assert.h>
+    #include "{rpc_client_header}"
 
-static const unsigned char *RPC_buffer;
-static char RPC_initialized;
+    static const unsigned char *RPC_buffer;
+    static char RPC_initialized;
 
-{implementation}{externC_outro}
-'''.format(
-    doNotModify = doNotModifyHeader,
-    rpc_client_header = "RPC_" + files["ServerHeaderFileName"][:-1] + 'h',
-    implementation = rpcImplementation,
-    externC_outro = externC_outro,
-    externC_intro = externC_intro,
-    )
+    {implementation}{externC_outro}
+    '''.format(
+        doNotModify = doNotModifyHeader,
+        rpc_client_header = "RPC_" + files["ServerHeaderFileName"][:-1] + 'h',
+        implementation = rpcImplementation,
+        externC_outro = externC_outro,
+        externC_intro = externC_intro,
+        )
 
-for file, data in (
-    ("ClientHeader", getRPC_serviceHeader(rpcHeader, "RPC_" + files["ServerHeaderFileName"][:-2] + '_H')),
-    ("ClientRpcTypesHeader", getRpcTypesHeader()),
-    ("ServerRpcTypesHeader", getRpcTypesHeader()),
-    ("ClientNetworkHeader", getNetworkHeader()),
-    ("ServerNetworkHeader", getNetworkHeader()),
-    ("ClientImplementation", "".join((
-        rpcImplementation,
-        answerSizeChecker,
-        answerParser,
-        getRPC_Parser_init(),
-        getRPC_Parser_exit(),
-        externC_outro),
-     )),
-    ("RPC_serviceHeader", getRequestParserHeader()),
-    ("RPC_serviceImplementation", requestParserImplementation),
-    ):
-    f = open(files[file], "w")
-    f.write(data)
-    f.close()
+    for file, data in (
+        ("ClientHeader", getRPC_serviceHeader(rpcHeader, "RPC_" + files["ServerHeaderFileName"][:-2] + '_H')),
+        ("ClientRpcTypesHeader", getRpcTypesHeader()),
+        ("ServerRpcTypesHeader", getRpcTypesHeader()),
+        ("ClientNetworkHeader", getNetworkHeader()),
+        ("ServerNetworkHeader", getNetworkHeader()),
+        ("ClientImplementation", "".join((
+            rpcImplementation,
+            answerSizeChecker,
+            answerParser,
+            getRPC_Parser_init(),
+            getRPC_Parser_exit(),
+            externC_outro),
+         )),
+        ("RPC_serviceHeader", getRequestParserHeader()),
+        ("RPC_serviceImplementation", requestParserImplementation),
+        ):
+        f = open(files[file], "w")
+        f.write(data)
+        f.close()
+
+except:
+    import traceback
+    traceback.print_exc(1)
+    exit(-1)
