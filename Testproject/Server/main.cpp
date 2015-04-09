@@ -72,15 +72,26 @@ void parser(){
 
 void logic(){
 	try{
-		while (socket == nullptr)
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		for (;;){
-			int32_t result;
-			if (square(&result, 42) == RPC_SUCCESS){
-				std::cout << "square of " << 42 << " is " << result << '\n';
-			}
-			else{
-				std::cout << "failed calling function square\n";
+			while (socket == nullptr)
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			for (;socket;){
+				std::cout << "Testing RPC functions:\n";
+				int32_t result;
+				if (square(&result, 42) == RPC_SUCCESS){
+					std::cout << "square of " << 42 << " is " << result << '\n';
+				}
+				else{
+					std::cout << "failed calling function square\n";
+				}
+				char buffer[42] = "Hello World!";
+				if (reverse(buffer) == RPC_SUCCESS){
+					std::cout << "reverse of \"Hello World!\" is " << buffer << '\n';
+				}
+				else{
+					std::cout << "failed calling function square\n";
+				}
+				std::this_thread::sleep_for(std::chrono::seconds(1));
 			}
 		}
 		quitParser = true;

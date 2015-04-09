@@ -52,4 +52,3 @@ int main(){
 		std::cout << error.what() << '\n';
 	}
 }
-

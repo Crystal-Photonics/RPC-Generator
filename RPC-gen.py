@@ -260,22 +260,22 @@ class PointerDatatype(Datatype):
     type = self.signature,
     index = self.numberOfElementsIdentifier,
     indention = indention * '\t',
-    serialization = self.datatype.stringify(destination, identifier + "[i]", indention + 2),
+    serialization = self.datatype.stringify(identifier + "[i]", indention + 2),
     )
     def unstringify(self, destination, identifier, indention):
         return """
-{3}/* reading pointer {1}{0} with [{2}] elements*/
-{3}{{
-{3}	int i;
-{3}	for (i = 0; i < {2}; i++){{
-{4}
-{3}	}}
-{3}}}""".format(
-    identifier, #0
-    self.signature, #1
-    self.numberOfElementsIdentifier, #2
-    indention * '\t', #3
-    self.datatype.unstringify(destination, identifier + "[i]", indention + 2) #4
+{indention}/* reading pointer {signature}{identifier} with [{numberOfElementsIdentifier}] elements*/
+{indention}{{
+{indention}	int i;
+{indention}	for (i = 0; i < {numberOfElementsIdentifier}; i++){{
+{idDeserializer}
+{indention}	}}
+{indention}}}""".format(
+    identifier = identifier,
+    signature = self.signature,
+    numberOfElementsIdentifier = self.numberOfElementsIdentifier,
+    indention = indention * '\t',
+    idDeserializer = self.datatype.unstringify(destination, identifier + "[i]", indention + 2),
     )
     def isInput(self, identifier):
         return self.In
@@ -335,14 +335,13 @@ class Function:
             parameterdeclaration = "void"
         return parameterdeclaration
     def getCall(self):
-        if not self.isVoidReturnType:
-            returnvalue = "*return_value_out = "
-        else:
-            returnvalue = ""
+        print(self.name, self.parameterlist)
+        returnvalue = "*return_value_out = " if not self.isVoidReturnType else ""
+        parameterlist = self.parameterlist if self.isVoidReturnType else self.parameterlist[1:]
         return "{returnvalue}{functionname}({parameterlist});".format(
             returnvalue = returnvalue,
             functionname = self.name,
-            parameterlist = ", ".join(p["parametername"] for p in self.parameterlist[1:]),
+            parameterlist = ", ".join(p["parametername"] for p in parameterlist),
             )
     def getDefinition(self):
         return """
@@ -429,11 +428,11 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         retvalsetcode = ""
         if type(size) == float: #variable length
             retvalsetcode += """			if (size_bytes >= 3)
-				returnvalue.size = (*(unsigned char *)buffer)[1] + (*(unsigned char *)buffer)[2] << 8;
-			else{
+				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
+			else{{
 				returnvalue.size = 3;
 				returnvalue.result = RPC_COMMAND_INCOMPLETE;
-			}"""
+			}}""".format(buffer = buffer)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
         return """\t\tcase {ID}: /* {declaration} */
@@ -456,11 +455,11 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         retvalsetcode = ""
         if type(size) == float: #variable length
             retvalsetcode += """			if (size_bytes >= 3)
-				returnvalue.size = (*(unsigned char *)buffer)[1] + (*(unsigned char *)buffer)[2] << 8;
-			else{
+				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
+			else{{
 				returnvalue.size = 3;
 				returnvalue.result = RPC_COMMAND_INCOMPLETE;
-			}"""
+			}}""".format(buffer = buffer)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
         return """

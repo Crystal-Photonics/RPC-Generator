@@ -1,7 +1,6 @@
 #include "Client.h"
-#include <future>
 
-#include <numeric>
+#include <algorithm>
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,10 +10,8 @@ int32_t square(int32_t i){
 	return i * i;
 }
 
-int32_t test(uint16_t data_inout[42]){
-	for (int i = 0; i < 42; ++i)
-		data_inout[i] *= data_inout[i];
-	return std::accumulate(data_inout, data_inout + 42, 0);
+void reverse(char text_inout[42]){
+	std::reverse(text_inout, text_inout + strnlen(text_inout, 42));
 }
 
 #ifdef __cplusplus
