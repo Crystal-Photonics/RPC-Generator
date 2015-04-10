@@ -8,6 +8,7 @@ import CppHeaderParser
 from copy import deepcopy
 from enum import Enum
 from itertools import chain
+import xml.etree.ElementTree as ET
 
 datatypes = {}
 defines = {}
@@ -40,6 +41,9 @@ def isVoidDatatype(datatype):
 #Metatype describing what all datatypes must be capable of
 class Datatype:
     #__init__ #depending on type
+    def setXml(self, xml):
+        #adds a description of the data type to the xml entry
+        raise NotImplemented
     def declaration(self, identifier):
         #returns the declaration for the datatype given its identifier such as "i" -> "int i" or "ia" -> "int ia[32][47]"
         raise NotImplemented
@@ -67,10 +71,22 @@ class Datatype:
     def getSize(self):
         #returns the number of bytes required to send this datatype over the network
         #pointers return 0.
-        raise NotImplemented
-        
+        raise NotImplemented        
 
 class IntegralDatatype(Datatype):
+    def __init__(self, signature, size_bytes):
+        self.signature = signature
+        self.size_bytes = size_bytes
+    def setXml(self, xml):
+        xml.set("bits", str(self.size_bytes * 8))
+        xml.set("ctype", self.signature)
+        if self.signature == "char":
+            xml.set("type", "character")
+        else:
+            xml.set("type", "integer")
+            typ = ET.SubElement(xml, "integer")
+            signed = "False" if self.signature[0] == "u" else "True"
+            typ.set("signed", signed)
     def getByte(number, identifier):
         assert number < 8, "Do not know how to portably deal with integers bigger than 64 bit"
         if number == 0:
@@ -92,9 +108,6 @@ class IntegralDatatype(Datatype):
         elif number < 8:
             return "{0} |= {1} << {2}LL".format(identifier, source, 8 * number)
     #use bitshift to prevent endianess problems
-    def __init__(self, signature, size_bytes):
-        self.signature = signature
-        self.size_bytes = size_bytes
     def declaration(self, identifier):
         return self.signature + " " + identifier
     def stringify(self, identifier, indention):
@@ -134,6 +147,10 @@ class BasicTransferDatatype(Datatype):
         self.signature = signature
         self.size_bytes = size_bytes
         self.transfertype = transfertype
+    def setXml(self, xml):
+        xml.set("bits", str(self.size_bytes * 8))
+        xml.set("ctype", self.signature)
+        typ = ET.SubElement(xml, "basic")
     def declaration(self, identifier):
         return self.signature + " " + identifier
     def stringify(self, identifier, indention):
@@ -189,6 +206,13 @@ class ArrayDatatype(Datatype):
         self.datatype = datatype
         self.In = parametername.endswith("_in") or parametername.endswith("_inout")
         self.Out = parametername.endswith("_out") or parametername.endswith("_inout")
+    def setXml(self, xml):
+        xml.set("bits", str(self.getSize() * 8))
+        xml.set("ctype", self.declaration(""))
+        xml.set("type", "array")
+        typ = ET.SubElement(xml, "array")
+        typ.set("elements", self.numberOfElements)
+        self.datatype.setXml(typ)
     def declaration(self, identifier):
         return self.datatype.declaration(identifier + "[" + str(self.numberOfElements) + "]")
     def isInput(self, identifier):
@@ -244,6 +268,9 @@ class PointerDatatype(Datatype):
         self.datatype = datatype
         self.In = parametername.endswith("_in") or parametername.endswith("_inout")
         self.Out = parametername.endswith("_out") or parametername.endswith("_inout")
+    def setXml(self, xml):
+        xml.set("bits", "???")
+        xml.set("ctype", self.signature)
     def declaration(self, identifier):
         return self.signature + " " + identifier
     def setNumberOfElementsIdentifier(self, numberOfElementsIdentifier):
@@ -292,6 +319,9 @@ class StructDatatype(Datatype):
         self.memberList = memberList
         self.file = file
         self.lineNumber = lineNumber
+    def setXml(self, xml):
+        xml.set("bits", str(self.getSize()))
+        xml.set("ctype", self.signature)
     def declaration(self, identifier):
         return self.signature + " " + identifier
     def stringify(self, identifier, indention):
@@ -330,6 +360,37 @@ class Function:
         self.parameterlist = parameterlist
         #print(10*'+' + '\n' + "".join(str(p) for p in parameterlist) + '\n' + 10*'-' + '\n')
         self.ID = ID
+    def getXml(self, entry):
+        if self.name in functionIgnoreList:
+            return
+        entry.set("name", self.name)
+        declaration = ET.SubElement(entry, "declaration")
+        declaration.text = self.getDeclaration()
+        request = ET.SubElement(entry, "request")
+        request.set("ID", str(self.ID * 2))
+        i = 1
+        for p in self.parameterlist:
+            if not p["parameter"].isInput(p["parametername"]):
+                continue
+            param = ET.SubElement(request, "parameter")
+            param.set("position", str(i))
+            param.set("name", p["parametername"])
+            i += 1
+            p["parameter"].setXml(param)
+        if self.name in functionNoAnswerList:
+            return
+        reply = ET.SubElement(entry, "reply")
+        reply.set("ID", str(self.ID * 2 + 1))
+        i = 1
+        for p in self.parameterlist:
+            if not p["parameter"].isOutput(p["parametername"]):
+                continue
+            param = ET.SubElement(reply, "parameter")
+            param.set("position", str(i))
+            param.set("name", p["parametername"])
+            i += 1
+            p["parameter"].setXml(param)
+        
     def getParameterDeclaration(self):
         parameterdeclaration = ", ".join(p["parameter"].declaration(p["parametername"]) for p in self.parameterlist)
         if parameterdeclaration == "":
@@ -881,7 +942,7 @@ def evaluatePragmas(pragmas):
             else:
                 assert False, "Unknown command {} in {}".format(command, currentFile)
 
-def generateCode(file):
+def generateCode(file, xml):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
     #return None
@@ -922,6 +983,9 @@ def generateCode(file):
             functionlist.append(getFunction(f))
     rpcHeader = "\n".join(f.getDeclaration() for f in functionlist)
     rpcImplementation = "\n".join(f.getDefinition() for f in functionlist)
+    for f in functionlist:
+        entry = ET.SubElement(xml, "function")
+        f.getXml(entry)
     from os.path import basename
     requestParserImplementation = externC_intro + '\n' + getSizeFunction(functionlist, basename(file)) + getRequestParser(functionlist) + externC_outro
     answerSizeChecker = getAnswerSizeChecker(functionlist)
@@ -957,6 +1021,7 @@ def getFilePaths():
         "ClientNetworkImplementation" : join(args.ClientDirectory, "RPC_network_implementation"),
         "ClientNetworkHeader" : join(args.ClientDirectory, "RPC_network.h"),
         "ServerNetworkHeader" : join(serverHeaderPath, "RPC_network.h"),
+        "xmldump" : join(args.ClientDirectory, serverHeaderFilename[:-1] + "xml"),
         }
 
 doNotModifyHeader = """/* This file has been automatically generated by RPC-Generator
@@ -1139,9 +1204,11 @@ void RPC_parse_request(const void *buffer, size_t size_bytes);
 """.format(doNotModifyHeader, externC_intro, externC_outro)
 
 try:
+    root = ET.Element("RPC")
+
     files = getFilePaths()
 
-    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker = generateCode(files["ServerHeader"])
+    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker = generateCode(files["ServerHeader"], root)
 
     requestParserImplementation = doNotModifyHeader + '\n' + requestParserImplementation
 
@@ -1181,10 +1248,13 @@ try:
         ("RPC_serviceHeader", getRequestParserHeader()),
         ("RPC_serviceImplementation", requestParserImplementation),
         ):
+        print(files[file])
         f = open(files[file], "w")
         f.write(data)
         f.close()
-
+    xml = ET.ElementTree()
+    xml._setroot(root)
+    xml.write(files["xmldump"], encoding="UTF-8", xml_declaration = True)
 except:
     import traceback
     traceback.print_exc(1)

@@ -4,15 +4,27 @@
 extern "C" {
 #endif /* __cplusplus */
 
-int32_t square(int32_t i);
+int32_t simpleTest(int32_t i);
 
-void reverse(char text_inout[42]);
+void arrayTest(char text_inout[42]);
 
-#pragma RPC noanswer sayHello
-void sayHello();
+void multiArrayTest(char text_inout[2][3][4]);
 
-#pragma RPC noanswer square2
-int32_t square2(int32_t i);
+void arrayInputTest(char text_in[42]);
+
+void arrayOutputTest(char text_out[42]);
+
+void arrayInputOutputTest(char text_inout[42]);
+
+void emptyTest();
+
+#pragma RPC noanswer noAnswerTest
+void noAnswerTest();
+
+void multipleParametersTest(uint8_t p1, uint16_t p2, uint32_t p3);
+
+#pragma RPC ignore ignoreTest
+void ignoreTest();
 
 #ifdef __cplusplus
 }

@@ -7,22 +7,33 @@
 extern "C" {
 #endif /* __cplusplus */
 
-int32_t square(int32_t i){
-	return i * i;
-}
+	int32_t simpleTest(int32_t i){
+		std::cout << __FUNCTION__ "\n";
+		return i * i;
+	}
 
-void reverse(char text_inout[42]){
-	std::reverse(text_inout, text_inout + strnlen(text_inout, 42));
-}
+	void arrayTest(char text_inout[42]){
+		std::cout << __FUNCTION__ "\n";
+		std::reverse(text_inout, text_inout + strnlen(text_inout, 42));
+	}
 
-void sayHello(){
-	std::cout << "Hello!\n";
-}
+	void emptyTest(){
+		std::cout << __FUNCTION__ "\n";
+	}
 
-int32_t square2(int32_t i){
-	std::cout << "square of " << i << " is " << i * i << ", but I'm not telling!\n";
-	return i * i;
-}
+#pragma RPC noanswer noAnswerTest
+	void noAnswerTest(){
+		std::cout << __FUNCTION__ "\n";
+	}
+
+	void multipleParametersTest(uint8_t p1, uint16_t p2, uint32_t p3){
+		std::cout << __FUNCTION__ "\n";
+	}
+
+#pragma RPC ignore ignoreTest
+	void ignoreTest(){
+		std::cout << __FUNCTION__ "\n";
+	}
 
 #ifdef __cplusplus
 }
