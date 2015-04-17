@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 2.8)
+PROJECT(ClientServer)
+execute_process(COMMAND python ../RPC-gen.py ClientServer/Server/server.h ClientServer/Client RESULT_VARIABLE failure)
+if(failure)
+	message(FATAL_ERROR "Failed generating RPC files")
+endif(failure)
+add_subdirectory(Client ../bin/ClientServer/Client)
+add_subdirectory(Server ../bin/ClientServer/Server)

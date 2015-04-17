@@ -1,0 +1,1 @@
+﻿Server waits for connection. Client connects to server and calls server services.

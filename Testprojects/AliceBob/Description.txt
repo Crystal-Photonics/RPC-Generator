@@ -1,0 +1,1 @@
+﻿Alice and Bob talk to each other. Alice calls Bob's functions and Bob calls Alice's functions. Carol not yet implemented.

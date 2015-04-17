@@ -1003,9 +1003,10 @@ def getFilePaths():
 
     #check if input is valid
     from os.path import isfile, isdir, abspath, join, split
-    assert isfile(args.ServerHeader)
+    from os import getcwd
+    assert isfile(args.ServerHeader), args.ServerHeader + " is not an existing file inside " + getcwd()
     assert args.ServerHeader.endswith(".h"), args.ServerHeader + "Does not appear to be a header file"
-    assert isdir(args.ClientDirectory)
+    assert isdir(args.ClientDirectory), args.ClientDirectory + " is not an existing directory inside " + getcwd()
 
     serverHeaderPath, serverHeaderFilename = split(args.ServerHeader)
 
