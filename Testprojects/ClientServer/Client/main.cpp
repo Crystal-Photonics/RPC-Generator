@@ -1,10 +1,11 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
 #include "RPC_server.h"
 #include <thread>
 #include <cassert>
 #include <vector>
 #include <atomic>
-#include "../SharedSocketCode/socket.h"
+#include "../../SharedSocketCode/socket.h"
 #include "network.h"
 #include <string>
 

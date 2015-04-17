@@ -100,10 +100,8 @@ std::unique_ptr<SocketImplementation> SocketImplementation::waitForConnection(co
 		if (listen(s, 1) == SOCKET_ERROR)
 			throw std::runtime_error("listen failed with error " + std::to_string(WSAGetLastError()));
 		timeval selectTimeout;
-		const auto timeout_s = std::chrono::duration_cast<std::chrono::seconds>(timeout).count();
-		const auto timeout_us = std::chrono::duration_cast<std::chrono::microseconds>(timeout).count() - timeout_s;
-		selectTimeout.tv_sec = timeout_s;
-		selectTimeout.tv_usec = timeout_us;
+		selectTimeout.tv_sec = std::chrono::duration_cast<std::chrono::seconds>(timeout).count();
+		selectTimeout.tv_usec = std::chrono::duration_cast<std::chrono::microseconds>(timeout).count() % 1000000;
 		fd_set fds;
 		fds.fd_count = 1;
 		fds.fd_array[0] = s;

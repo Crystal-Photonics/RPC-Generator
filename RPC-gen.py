@@ -1215,14 +1215,15 @@ try:
     rpcImplementation = '''{doNotModify}
     {externC_intro}
 
-    #include <stdint.h>
-    #include <assert.h>
-    #include "{rpc_client_header}"
+#include <stdint.h>
+#include <assert.h>
+#include "{rpc_client_header}"
+#include "RPC_network.h"
 
-    static const unsigned char *RPC_buffer;
-    static char RPC_initialized;
+static const unsigned char *RPC_buffer;
+static char RPC_initialized;
 
-    {implementation}{externC_outro}
+{implementation}{externC_outro}
     '''.format(
         doNotModify = doNotModifyHeader,
         rpc_client_header = "RPC_" + files["ServerHeaderFileName"][:-1] + 'h',
