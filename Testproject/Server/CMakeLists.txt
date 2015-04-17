@@ -1,4 +1,4 @@
-project(TestprojectServer)
+project(TestprojectClient)
 cmake_minimum_required(VERSION 2.8)
 
 FILE(GLOB RPC_SOURCES RPC_*.c)
@@ -20,3 +20,4 @@ source_group(network FILES ${NETWORK_HEADERS})
 source_group(network FILES ${NETWORK_SOURCES})
 
 add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${RPC_HEADERS} ${RPC_SOURCES} ${NETWORK_HEADERS} ${NETWORK_SOURCES})
+

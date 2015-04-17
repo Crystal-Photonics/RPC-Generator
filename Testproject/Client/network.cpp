@@ -1,14 +1,14 @@
-#include "RPC_types.h"
+#include "RPC_client.h"
 #include <vector>
 #include <fstream>
 #include <cassert>
 #include <mutex>
 #include <chrono>
-#include "network.h"
+#include "../SharedSocketCode/socket.h"
 
-const auto timeout = std::chrono::milliseconds(500);
+auto timeout = std::chrono::milliseconds(500);
 std::vector<unsigned char> buffer;
-std::shared_ptr<Socket> socket;
+std::shared_ptr<Socket> socket; //using shared_ptr for it's thread safety, not for sharing
 std::timed_mutex mutexes[RPC_number_of_mutexes];
 
 extern "C" {
