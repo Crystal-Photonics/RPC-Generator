@@ -1,4 +1,4 @@
-#include "RPC_client.h"
+#include "RPC_types.h"
 #include <vector>
 #include <fstream>
 #include <cassert>

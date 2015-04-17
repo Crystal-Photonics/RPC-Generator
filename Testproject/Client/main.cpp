@@ -1,24 +1,26 @@
 #include <iostream>
-#include "RPC_client.h"
+#include "RPC_server.h"
 #include <thread>
 #include <cassert>
 #include <vector>
 #include <atomic>
 #include "../SharedSocketCode/socket.h"
 #include "network.h"
+#include <string>
 
 std::atomic<bool> quitParser = false;
 
 void parser(){
 	try{
 		for (; !quitParser;){
-			std::cout << "waiting for connection\n";
-			socket = Socket::waitForConnection("127.0.0.1", Socket::serverListenPort, std::chrono::minutes(1));
-			if (!socket){
-				std::cout << "got timeout\n";
+			try{
+				auto s = Socket::getConnection("127.0.0.1", Socket::serverConnectPort);
+				socket = std::make_shared<Socket>(std::move(s));
+			}
+			catch (const std::runtime_error &error){
+				std::cout << error.what() << '\n';
 				continue;
 			}
-			std::cout << "connection established\n";
 			std::vector<unsigned char> buffer;
 			try{
 				for (; !quitParser;){
@@ -75,34 +77,80 @@ void logic(){
 		for (;;){
 			while (socket == nullptr)
 				std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			for (;socket;){
+			for (; socket;){
 				std::cout << "Testing RPC functions:\n";
-				int32_t result;
-				if (square(&result, 42) == RPC_SUCCESS){
-					std::cout << "square of " << 42 << " is " << result << '\n';
+
+				int32_t retval;
+				if (simpleTest(&retval, 17) == RPC_SUCCESS){
+					std::cout << "simpleTest succeeded: " << retval << '\n';
 				}
 				else{
-					std::cout << "failed calling function square\n";
+					std::cout << "simpleTest failed\n";
 				}
-				char buffer[42] = "Hello World!";
-				if (reverse(buffer) == RPC_SUCCESS){
-					std::cout << "reverse of \"Hello World!\" is " << buffer << '\n';
-				}
-				else{
-					std::cout << "failed calling function square\n";
-				}
-				if (sayHello() == RPC_SUCCESS){
-					std::cout << "said hello\n";
+
+				char testArray[42] = "Hello World!";
+				if (arrayTest(testArray) == RPC_SUCCESS){
+					std::cout << "arrayTest succeeded: " << std::string(testArray, testArray + strnlen(testArray, 42)) << '\n';
 				}
 				else{
-					std::cout << "failed calling function sayHello\n";
+					std::cout << "arrayTest failed\n";
 				}
-				if (square2(&result, 42) == RPC_SUCCESS){
-					std::cout << "calculated square2 of " << 42 << ", but didn't send result\n";
+
+				char multiArray[2][3][4] = {};
+				if (multiArrayTest(multiArray) == RPC_SUCCESS){
+					std::cout << "multiArrayTest succeeded\n";
 				}
 				else{
-					std::cout << "failed calling function square2\n";
+					std::cout << "multiArrayTest failed\n";
 				}
+
+				if (arrayInputTest(testArray) == RPC_SUCCESS){
+					std::cout << "arrayInputTest succeeded: " << std::string(testArray, testArray + strnlen(testArray, 42)) << '\n';
+				}
+				else{
+					std::cout << "arrayInputTest failed\n";
+				}
+
+				sprintf(testArray, "Heyo Input!");
+				if (arrayOutputTest(testArray) == RPC_SUCCESS){
+					std::cout << "arrayOutputTest succeeded\n";
+				}
+				else{
+					std::cout << "arrayOutputTest failed\n";
+				}
+
+				sprintf(testArray, "Heyo IO!");
+				if (arrayInputOutputTest(testArray) == RPC_SUCCESS){
+					std::cout << "arrayInputOutputTest succeeded: " << std::string(testArray, testArray + strnlen(testArray, 42)) << '\n';
+				}
+				else{
+					std::cout << "arrayInputOutputTest failed\n";
+				}
+
+				if (emptyTest() == RPC_SUCCESS){
+					std::cout << "emptyTest succeeded\n";
+				}
+				else{
+					std::cout << "emptyTest failed\n";
+				}
+
+				if (noAnswerTest() == RPC_SUCCESS){
+					std::cout << "noAnswerTest succeeded\n";
+				}
+				else{
+					std::cout << "noAnswerTest failed\n";
+				}
+
+				uint8_t p1 = 11;
+				uint16_t p2 = 222;
+				uint32_t p3 = 3333;
+				if (multipleParametersTest(p1, p2, p3) == RPC_SUCCESS){
+					std::cout << "multipleParametersTest succeeded\n";
+				}
+				else{
+					std::cout << "multipleParametersTest failed\n";
+				}
+
 				std::this_thread::sleep_for(std::chrono::seconds(1));
 			}
 		}

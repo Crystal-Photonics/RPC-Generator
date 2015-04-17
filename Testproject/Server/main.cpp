@@ -8,14 +8,13 @@
 int main(){
 	try{
 		for (;;){
-			try{
-				auto s = Socket::getConnection("127.0.0.1", Socket::serverConnectPort);
-				socket = std::make_shared<Socket>(std::move(s));
-			}
-			catch (const std::runtime_error &error){
-				std::cout << error.what() << '\n';
+			std::cout << "waiting for connection\n";
+			socket = Socket::waitForConnection("127.0.0.1", Socket::serverListenPort, std::chrono::minutes(1));
+			if (!socket){
+				std::cout << "got timeout\n";
 				continue;
 			}
+			std::cout << "connection established\n";
 			std::vector<unsigned char> buffer;
 			try{
 				for (;;){
