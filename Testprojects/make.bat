@@ -1,0 +1,10 @@
+cd AliceBob
+cd Project
+cmake CMakeLists.txt
+cd ..
+cd ..
+cd ClientServer
+cd Project
+cmake CMakeLists.txt
+cd ..
+cd ..
