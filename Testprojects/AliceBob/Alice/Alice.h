@@ -1,9 +1,13 @@
-#include <stdint.h>
+#include <inttypes.h>
 
 #ifdef __cplusplus
 extern "C" {
-#endif //__cplusplus
-	uint32_t pow(uint32_t base, uint8_t exponent);
+#endif /* __cplusplus */
+	void bobToAliceTest(void);
+	void ping(void);
+#pragma RPC noanswer infinitePingpongA
+	void infinitePingpongA(void);
+	void networkFloodingA(void);
 #ifdef __cplusplus
 }
-#endif //__cplusplus
+#endif /* __cplusplus */

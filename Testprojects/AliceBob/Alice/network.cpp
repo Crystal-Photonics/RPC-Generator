@@ -6,7 +6,7 @@
 #include <chrono>
 #include "../../SharedSocketCode/socket.h"
 
-auto timeout = std::chrono::milliseconds(500);
+const auto timeout = std::chrono::milliseconds(1000);
 std::vector<unsigned char> buffer;
 std::shared_ptr<Socket> socket; //using shared_ptr for it's thread safety, not for sharing
 std::timed_mutex mutexes[RPC_number_of_mutexes];
