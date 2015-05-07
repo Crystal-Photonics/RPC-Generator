@@ -26,6 +26,24 @@ void multipleParametersTest(uint8_t p1, uint16_t p2, uint32_t p3);
 #pragma RPC ignore ignoreTest
 void ignoreTest();
 
+struct TestStruct{
+	uint32_t n1;
+	int16_t n2;
+	char n3;
+	uint8_t n4;
+	char ar[2];
+	char c;
+};
+
+void structTest(struct TestStruct s_out[1]);
+
+typedef struct {
+	uint16_t n;
+	uint8_t ia[42];
+} TypedefTestStruct;
+
+void typedefStructTest(TypedefTestStruct s_in[1]);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

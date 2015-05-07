@@ -11,6 +11,7 @@ from itertools import chain
 import xml.etree.ElementTree as ET
 
 datatypes = {}
+datatypeDeclarations = []
 defines = {}
 currentFile = ""
 
@@ -26,11 +27,21 @@ def getDatatype(signature, file = "???", line = "???"):
                 return datatypes[defines[signature]]
             except KeyError:
                 assert "Size for type " + signature + " is unknown."
+    elif len(signatureList) == 2 and signatureList[0] == "struct":
+        assert signature in datatypes, 'Unknown type "{0}" in {1}:{2}'.format(
+            signature, #0
+            file, #1
+            line, #2
+            )
+        return datatypes[signature]
     assert False, 'Unknown type "{0}" in {1}:{2}'.format(
         signature, #0
         file, #1
         line, #2
         )
+
+def getTypeDeclarations():
+    return "\n".join(dd for dd in datatypeDeclarations)
 
 def isVoidDatatype(datatype):
     try:
@@ -58,12 +69,12 @@ class Datatype:
         #indention is the indention level of the code
         #returns code that does the unstringifying
         raise NotImplemented
-    def isInput(self, identifier):
+    def isInput(self):
         #returns True if this is an input parameter when passed to a function and False otherwise
         #pointers and arrays may be pure output parameters, integers are always input parameters
         #if pointers and arrays are input parameters depends on their identifier name
         raise NotImplemented
-    def isOutput(self, identifier):
+    def isOutput(self):
         #returns True if this is an output parameter when passed to a function and False otherwise
         #pointers and arrays can be output parameters, integers can never be output parameters
         #if pointers and arrays are output parameters depends on their identifier name
@@ -134,9 +145,9 @@ class IntegralDatatype(Datatype):
     self.size_bytes, #4
     "".join(indention * '\t' + IntegralDatatype.orByte(i, identifier, "(*" + source + "++)") + ";\n" for i in range(1, self.size_bytes)), #5
     )
-    def isInput(self, identifier):
+    def isInput(self):
         return True
-    def isOutput(self, identifier):
+    def isOutput(self):
         return False
     def getSize(self):
         assert type(self.size_bytes) == int
@@ -191,9 +202,9 @@ class BasicTransferDatatype(Datatype):
     self.size_bytes, #4
     self.transfertype, #5
     )
-    def isInput(self, identifier):
+    def isInput(self):
         return True
-    def isOutput(self, identifier):
+    def isOutput(self):
         return False
     def getSize(self):
         assert type(self.size_bytes) == int
@@ -201,11 +212,11 @@ class BasicTransferDatatype(Datatype):
 
 class ArrayDatatype(Datatype):
     #need to be mindful of padding, otherwise it is a fixed size loop
-    def __init__(self, numberOfElements, datatype, parametername):
+    def __init__(self, numberOfElements, datatype, parametername, In = None, Out = None):
         self.numberOfElements = numberOfElements
         self.datatype = datatype
-        self.In = parametername.endswith("_in") or parametername.endswith("_inout")
-        self.Out = parametername.endswith("_out") or parametername.endswith("_inout")
+        self.In = parametername.endswith("_in") or parametername.endswith("_inout") if In is None else In
+        self.Out = parametername.endswith("_out") or parametername.endswith("_inout") if Out is None else Out
     def setXml(self, xml):
         xml.set("bits", str(self.getSize() * 8))
         xml.set("ctype", self.declaration(""))
@@ -215,14 +226,14 @@ class ArrayDatatype(Datatype):
         self.datatype.setXml(typ)
     def declaration(self, identifier):
         return self.datatype.declaration(identifier + "[" + str(self.numberOfElements) + "]")
-    def isInput(self, identifier):
-        return identifier.endswith("in") or identifier.endswith("inout")
-    def isOutput(self, identifier):
-        return identifier.endswith("out") or identifier.endswith("inout") or identifier.endswith(']')
+    def isInput(self):
+        return self.In
+    def isOutput(self):
+        return self.Out
     def stringify(self, identifier, indention):
         if self.numberOfElements == "1":
             #no loop required for 1 element
-            return "{0}{1}".format(indention * '\t', self.datatype.stringify("*" + identifier, indention))
+            return "{0}{1}".format(indention * '\t', self.datatype.stringify("(*" + identifier + ")", indention))
         return """
 {indention}/* writing array {name} with {numberOfElements} elements */
 {indention}{{
@@ -240,7 +251,7 @@ class ArrayDatatype(Datatype):
     def unstringify(self, destination, identifier, indention):
         if self.numberOfElements == "1":
             #no loop required for 1 element
-            return "{0}{1}".format(indention * '\t', self.datatype.unstringify(destination, "*" + identifier, indention))
+            return "{0}{1}".format(indention * '\t', self.datatype.unstringify(destination, "(*" + identifier + ")", indention))
         return """
 {3}/* reading array {0} with {2} elements */
 {3}{{
@@ -305,9 +316,9 @@ class PointerDatatype(Datatype):
     indention = indention * '\t',
     idDeserializer = self.datatype.unstringify(destination, identifier + "[i]", indention + 2),
     )
-    def isInput(self, identifier):
+    def isInput(self):
         return self.In
-    def isOutput(self, identifier):
+    def isOutput(self):
         return self.Out
     def getSize(self):
         return 0.
@@ -325,9 +336,9 @@ class StructDatatype(Datatype):
     def declaration(self, identifier):
         return self.signature + " " + identifier
     def stringify(self, identifier, indention):
-        members = ", ".join(m["type"] + " " + m["name"] for m in self.memberList)
+        members = ", ".join(m["datatype"].declaration(m["name"]) for m in self.memberList)
         #print(self.memberList)
-        memberStringification = "".join(getDatatype(m["type"], self.file, self.lineNumber).stringify(identifier + "." + m["name"], indention + 1) for m in self.memberList)
+        memberStringification = "".join(m["datatype"].stringify(identifier + "." + m["name"], indention + 1) for m in self.memberList)
         return "{indention}/*writing {identifier} of type {type} with members {members}*/\n{indention}{{{memberStringification}\n{indention}}}".format(
             indention = indention * '\t',
             type = self.signature,
@@ -335,14 +346,36 @@ class StructDatatype(Datatype):
             identifier = identifier,
             memberStringification = memberStringification,
             )
-    def isInput(self, identifier):
+    def unstringify(self, destination, identifier, indention):
+        memberUnstringification = "".join(m["datatype"].unstringify(destination, identifier + "." + m["name"], indention + 1) for m in self.memberList)
+        return """
+{indention}/* reading {signature}{identifier}*/
+{indention}{{
+{memberdeserialize}
+{indention}}}""".format(
+    identifier = identifier,
+    signature = self.signature,
+    indention = indention * '\t',
+    memberdeserialize = memberUnstringification,
+    )
+    def isInput(self):
         #TODO: Go through members and return if for any of them isInput is true
         raise NotImplemented
-    def isOutput(self, identifier):
+    def isOutput(self):
         #TODO: Go through members and return if for any of them isOutput is true
         raise NotImplemented
     def getSize(self):
-        return sum(m.getSize() for m in self.memberList)
+        #print(self.memberList)
+        return sum(m["datatype"].getSize() for m in self.memberList)
+    def getTypeDeclaration(self):
+        siglist = self.signature.split(" ")
+        isTypedefed = len(siglist) == 1
+        memberDeclarations = ";\n\t".join(m["datatype"].declaration(m["name"]) for m in self.memberList)
+        form = "typedef struct{{\n\t{members};\n}}{sig};\n" if isTypedefed else "{sig}{{\n\t{members};\n}};\n"
+        return form.format(
+            sig = self.signature,
+            members = memberDeclarations,
+            )
 
 class Function:
     #stringify turns a function call into a string and sends it to the other side
@@ -370,7 +403,7 @@ class Function:
         request.set("ID", str(self.ID * 2))
         i = 1
         for p in self.parameterlist:
-            if not p["parameter"].isInput(p["parametername"]):
+            if not p["parameter"].isInput():
                 continue
             param = ET.SubElement(request, "parameter")
             param.set("position", str(i))
@@ -383,7 +416,7 @@ class Function:
         reply.set("ID", str(self.ID * 2 + 1))
         i = 1
         for p in self.parameterlist:
-            if not p["parameter"].isOutput(p["parametername"]):
+            if not p["parameter"].isOutput():
                 continue
             param = ET.SubElement(reply, "parameter")
             param.set("position", str(i))
@@ -426,7 +459,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 }}
 """.format(
     requestID = self.ID * 2,
-    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 1) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 1) for p in self.parameterlist if p["parameter"].isInput()),
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
     )
@@ -475,10 +508,10 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 """.format(
     requestID = self.ID * 2,
     answerID = self.ID * 2 + 1,
-    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 2) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 2) for p in self.parameterlist if p["parameter"].isInput()),
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
-    outputParameterDeserialization = "".join(p["parameter"].unstringify("RPC_buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
+    outputParameterDeserialization = "".join(p["parameter"].unstringify("RPC_buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput()),
     )
     def getDeclaration(self):
         return "RPC_RESULT {0}({1});".format(
@@ -502,7 +535,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     ID = self.ID * 2,
     declaration = self.getDeclaration(),
     parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
-    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput()),
     functioncall = self.getCall(),
     )
         return """
@@ -523,9 +556,9 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     ID = self.ID * 2,
     declaration = self.getDeclaration(),
     parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
-    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput(p["parametername"])),
+    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput()),
     functioncall = self.getCall(),
-    outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput(p["parametername"])),
+    outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput()),
     ID_plus_1 = self.ID * 2 + 1
     )
     def getAnswerSizeCase(self, buffer):
@@ -536,7 +569,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     declaration = self.getDeclaration(),
     ID = self.ID * 2 + 1,
     )
-        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput(p["parametername"]))
+        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput())
         retvalsetcode = ""
         if type(size) == float: #variable length
             retvalsetcode += """			if (size_bytes >= 3)
@@ -565,7 +598,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     declaration = self.getDeclaration(),
     )
     def getRequestSizeCase(self, buffer):
-        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput(p["parametername"]))
+        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput())
         retvalsetcode = ""
         if type(size) == float: #variable length
             retvalsetcode += """			if (size_bytes >= 3)
@@ -657,11 +690,24 @@ def setStructTypes(structs):
     for s in structs:
         memberList = []
         for t in structs[s]["properties"]["public"]:
-            memberList.append({"type" : t["type"], "name" : t["name"]})
-            isTypedef = t["property_of_class"] != s
+            memberList.append({"name" : t["name"], "datatype" : getStructParameter(t)})
+            #print(structs[s][t])
         assert len(memberList) > 0, "struct with no members is not supported"
-        signatue = s if isTypedef else "struct " + s
-        datatypes[signatue] = StructDatatype(signatue, memberList, currentFile, structs[s]["line_number"])
+        isTypedefed = structs[s]["properties"]["public"][0]['property_of_class'] != s
+        signature = s if isTypedefed else "struct " + s
+        datatypes[signature] = StructDatatype(signature, memberList, currentFile, structs[s]["line_number"])
+        datatypeDeclarations.append(datatypes[signature].getTypeDeclaration())
+
+def getStructParameter(parameter):
+    #print(parameter, flush=True)
+    basetype = getDatatype(parameter["type"], currentFile, parameter["line_number"])
+    if 'multi_dimensional_array_size' in parameter:
+        print(parameter["multi_dimensional_array_size"], flush=True)
+        return ArrayDatatype(parameter["array_size"], basetype, parameter["name"])
+    if 'array_size' in parameter:
+        return ArrayDatatype(parameter["array_size"], basetype, parameter["name"])
+    assert parameter["type"][-1] != '*', "Pointers are not allowed in structs"
+    return basetype
 
 def setDefines(newdefines):
     for d in newdefines:
@@ -676,7 +722,13 @@ def getFunctionReturnType(function):
     return getDatatype(function["rtnType"], currentFile, function["line_number"])
 
 def getParameterArraySizes(parameter):
-    tokens = parameter["method"]["debug"].split(" ")
+    try:
+        tokens = parameter["method"]["debug"].split(" ")
+        #print(tokens, flush=True)
+    except KeyError:
+        if "array_size" in parameter:
+            return [int(parameter["array_size"])]
+        assert False, "Multidimensional arrays inside structs currently not supported"
     assert parameter["name"] in tokens, "Error: cannot get non-existing parameter " + parameter["name"] + " from declaration " + parameter["method"]["debug"]
     while tokens[0] != parameter["name"]:
         tokens = tokens[1:]
@@ -701,7 +753,8 @@ def getFunctionParameter(parameter):
         return {"isPointerRequiringSize":True, "parameter":PointerDatatype(parameter["type"], getDatatype(parameter["type"][:-2], currentFile, parameter["line_number"]), parameter["name"])}
     basetype = getDatatype(parameter["type"], currentFile, parameter["line_number"])
     if parameter["array"]: #array
-        assert parameter["name"][-3:] == "_in" or parameter["name"][-4:] == "_out" or parameter["name"][-6:] == "_inout", 'Array parameter name "' + parameter["name"] + '" must end with "_in", "_out" or "_inout"'
+        assert parameter["name"][-3:] == "_in" or parameter["name"][-4:] == "_out" or parameter["name"][-6:] == "_inout",\
+               'Array parameter name "' + parameter["name"] + '" must end with "_in", "_out" or "_inout" in {}:{} '.format(currentFile, parameter["line_number"])
         arraySizes = list(reversed(getParameterArraySizes(parameter)))
         current = ArrayDatatype(arraySizes[0], basetype, parameter["name"])
         arraySizes = arraySizes[1:]
@@ -738,7 +791,7 @@ def getFunctionParameterList(parameters):
             paramlist.append({"parameter":parameter, "parametername":parametername})
     assert not isPointerRequiringSize, 'Pointer parameter "{0}" must be followed by a size parameter with the name "{0}_size". Or use a fixed size array instead.'.format(parameters[len(paramlist) - 1]["name"])
     #for p in paramlist:
-    #    print(p.stringify("buffer", "var", 1))
+        #print(p.stringify("buffer", "var", 1))
     return paramlist
 
 def getFunction(function):
@@ -749,19 +802,19 @@ def getFunction(function):
     except AttributeError:
         getFunction.functionID = 1
     #for attribute in function:
-    #    print(attribute + ":", function[attribute])
+        #print(attribute + ":", function[attribute])
     ID = getFunction.functionID
     returntype = getFunctionReturnType(function)
     name = function["name"]
     parameterlist = getFunctionParameterList(function["parameters"])
     return Function(ID, returntype, name, parameterlist)
     #for k in function.keys():
-    #    print(k, '=', function[k])
+        #print(k, '=', function[k])
     #for k in function["parameters"][0]["method"].keys():
         #print(k, '=', function["parameters"][0]["method"][k], "\n")
         #print(function["parameters"][0]["method"])
         #for k2 in k["method"].keys():
-        #    print(k2, '=', str(k["method"][k2]))
+            #print(k2, '=', str(k["method"][k2]))
     #print(10*'_')
     #print(function.keys())
     #print("\n")
@@ -967,15 +1020,15 @@ def generateCode(file, xml):
     #print(ast.typedefs)
     #return None
     #for a in ast.__dict__:
-    #    print(a + ": " + str(getattr(ast, a)))
+        #print(a + ": " + str(getattr(ast, a)))
     setTypes(ast)
     #TODO: structs
     #TODO: typedefs
     #for d in datatypes:
-    #    print(d, datatypes[d].size_bytes)
+        #print(d, datatypes[d].size_bytes)
     #return None
     #for a in ast.__dict__:
-    #    print(a)
+        #print(a)
     #generateFunctionCode(ast.functions[0])
     functionlist = []
     for f in ast.functions:
@@ -1048,7 +1101,7 @@ rpc_enum = """typedef enum{
 } RPC_RESULT;
 """
 
-def getRPC_serviceHeader(headers, headername):
+def getRPC_serviceHeader(headers, headername, typedeclarations):
     headerDefine = headername.upper()
     return """{doNotModify}
 {includeguardintro}
@@ -1101,7 +1154,9 @@ void RPC_parse_answer(const void *buffer, size_t size);
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 /* //TODO: copy comments for documentation */
 {}
+{}
 """.format(
+    typedeclarations,
     headers,
     ),)
 
@@ -1234,7 +1289,7 @@ static char RPC_initialized;
         )
 
     for file, data in (
-        ("ClientHeader", getRPC_serviceHeader(rpcHeader, "RPC_" + files["ServerHeaderFileName"][:-2] + '_H')),
+        ("ClientHeader", getRPC_serviceHeader(rpcHeader, "RPC_" + files["ServerHeaderFileName"][:-2] + '_H', getTypeDeclarations())),
         ("ClientRpcTypesHeader", getRpcTypesHeader()),
         ("ServerRpcTypesHeader", getRpcTypesHeader()),
         ("ClientNetworkHeader", getNetworkHeader()),
@@ -1257,7 +1312,7 @@ static char RPC_initialized;
     xml = ET.ElementTree()
     xml._setroot(root)
     xml.write(files["xmldump"], encoding="UTF-8", xml_declaration = True)
-except:
+except SystemError:
     import traceback
     traceback.print_exc(1)
     exit(-1)

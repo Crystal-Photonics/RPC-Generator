@@ -27,7 +27,12 @@ void parser(){
 				for (; !quitParser;){
 					for (;;){
 						unsigned char c;
-						socket->receiveData(&c, 1);
+						try{
+							socket->receiveData(&c, 1);
+						}
+						catch (const Socket::ConnectionTimeoutException &){
+							return;
+						}
 						buffer.push_back(c);
 						if (quitParser)
 							return;
@@ -73,93 +78,50 @@ void parser(){
 	}
 }
 
+#define TEST_FUNCTION(FUNCTION, ...)\
+if (FUNCTION(__VA_ARGS__) == RPC_SUCCESS)\
+std::cout << #FUNCTION << " succeeded\n";\
+else{std::cout << #FUNCTION << " failed\n";assert(!#FUNCTION " failed\n");}
+
 void logic(){
 	try{
-		for (;;){
-			while (socket == nullptr)
-				std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			for (; socket;){
-				std::cout << "Testing RPC functions:\n";
+		while (socket == nullptr)
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		const auto &start = std::chrono::system_clock::now();
+		const auto &testduration = std::chrono::seconds(1);
+		assert(socket);
+		for (; socket && (start + testduration > std::chrono::system_clock::now());){
+			std::cout << "Testing RPC functions:\n";
 
-				int32_t retval;
-				if (simpleTest(&retval, 17) == RPC_SUCCESS){
-					std::cout << "simpleTest succeeded: " << retval << '\n';
-				}
-				else{
-					std::cout << "simpleTest failed\n";
-				}
-
-				char testArray[42] = "Hello World!";
-				if (arrayTest(testArray) == RPC_SUCCESS){
-					std::cout << "arrayTest succeeded: " << std::string(testArray, testArray + strnlen(testArray, 42)) << '\n';
-				}
-				else{
-					std::cout << "arrayTest failed\n";
-				}
-
-				char multiArray[2][3][4] = {};
-				if (multiArrayTest(multiArray) == RPC_SUCCESS){
-					std::cout << "multiArrayTest succeeded\n";
-				}
-				else{
-					std::cout << "multiArrayTest failed\n";
-				}
-
-				if (arrayInputTest(testArray) == RPC_SUCCESS){
-					std::cout << "arrayInputTest succeeded: " << std::string(testArray, testArray + strnlen(testArray, 42)) << '\n';
-				}
-				else{
-					std::cout << "arrayInputTest failed\n";
-				}
-
-				sprintf(testArray, "Heyo Input!");
-				if (arrayOutputTest(testArray) == RPC_SUCCESS){
-					std::cout << "arrayOutputTest succeeded\n";
-				}
-				else{
-					std::cout << "arrayOutputTest failed\n";
-				}
-
-				sprintf(testArray, "Heyo IO!");
-				if (arrayInputOutputTest(testArray) == RPC_SUCCESS){
-					std::cout << "arrayInputOutputTest succeeded: " << std::string(testArray, testArray + strnlen(testArray, 42)) << '\n';
-				}
-				else{
-					std::cout << "arrayInputOutputTest failed\n";
-				}
-
-				if (emptyTest() == RPC_SUCCESS){
-					std::cout << "emptyTest succeeded\n";
-				}
-				else{
-					std::cout << "emptyTest failed\n";
-				}
-
-				if (noAnswerTest() == RPC_SUCCESS){
-					std::cout << "noAnswerTest succeeded\n";
-				}
-				else{
-					std::cout << "noAnswerTest failed\n";
-				}
-
-				uint8_t p1 = 11;
-				uint16_t p2 = 222;
-				uint32_t p3 = 3333;
-				if (multipleParametersTest(p1, p2, p3) == RPC_SUCCESS){
-					std::cout << "multipleParametersTest succeeded\n";
-				}
-				else{
-					std::cout << "multipleParametersTest failed\n";
-				}
-
-				std::this_thread::sleep_for(std::chrono::seconds(1));
-			}
+			int32_t retval;
+			TEST_FUNCTION(simpleTest, &retval, 17);
+			char testArray[42] = "Hello World!";
+			TEST_FUNCTION(arrayTest, testArray);
+			assert(std::string(testArray, testArray + strnlen(testArray, 42)) == "!dlroW olleH");
+			char multiArray[2][3][4] = {};
+			TEST_FUNCTION(multiArrayTest, multiArray);
+			TEST_FUNCTION(arrayInputTest, testArray);
+			sprintf(testArray, "Heyo Input!");
+			TEST_FUNCTION(arrayOutputTest, testArray);
+			sprintf(testArray, "Heyo IO!");
+			TEST_FUNCTION(arrayInputOutputTest, testArray);
+			TEST_FUNCTION(emptyTest);
+			TEST_FUNCTION(noAnswerTest);
+			uint8_t p1 = 11;
+			uint16_t p2 = 222;
+			uint32_t p3 = 3333;
+			TEST_FUNCTION(multipleParametersTest, p1, p2, p3);
+			TestStruct s = {};
+			TEST_FUNCTION(structTest, &s);
+			TypedefTestStruct ts = {};
+			TEST_FUNCTION(typedefStructTest, &ts);
+			//std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
-		quitParser = true;
 	}
 	catch (const std::runtime_error &error){
 		std::cout << error.what() << '\n';
 	}
+	quitParser = true;
 }
 
 int main()

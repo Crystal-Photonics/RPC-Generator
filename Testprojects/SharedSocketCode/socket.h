@@ -28,7 +28,8 @@ public:
 		); //blocks until size bytes have been sent or an error occurs
 	void receiveData(
 		void *buffer,
-		size_t size); //blocks until size bytes have been read
+		size_t size,
+		const std::chrono::milliseconds &timeout = std::chrono::milliseconds(100));
 	Socket(
 		const Socket &) = delete; //no copying sockets
 	/* Socket(
@@ -37,6 +38,7 @@ public:
 		Socket &&other);
 	~Socket();
 	struct ConnectionClosed{}; //exception thrown when trying to send or receive data on closed connection
+	struct ConnectionTimeoutException{}; //exception thrown when a timeout occurs
 private:
 	Socket(
 		void *);

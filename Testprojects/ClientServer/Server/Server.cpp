@@ -38,11 +38,12 @@ extern "C" {
 	}
 
 	void arrayOutputTest(char text_out[42]){
-		fillString(text_out, 42, "hi from function "  __FUNCTION__);
 		std::cout << __FUNCTION__ << "\n";
+		fillString(text_out, 42, "hi from function "  __FUNCTION__);
 	}
 
 	void arrayInputOutputTest(char text_inout[42]){
+		std::cout << __FUNCTION__ "\n";
 		const auto length = strnlen(text_inout, 42);
 		auto addText = std::string(text_inout, text_inout + length);
 		std::reverse(std::begin(addText), std::end(addText));
@@ -66,6 +67,19 @@ extern "C" {
 	void ignoreTest(){
 		std::cout << __FUNCTION__ "\n";
 	}
+	
+	void structTest(struct TestStruct s_out[1]){
+		std::cout << __FUNCTION__ "\n";
+		s_out->n1 = 1;
+		s_out->n2 = 2;
+		s_out->n3 = 3;
+		s_out->n4 = 4;
+	}
+
+	void typedefStructTest(TypedefTestStruct s_in[1]){
+		std::cout << __FUNCTION__ << " with value " << s_in->n << '\n';
+	}
+
 
 #ifdef __cplusplus
 }

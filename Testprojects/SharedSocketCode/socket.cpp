@@ -22,7 +22,7 @@ public:
 	static SocketImplementation getConnection(const char *ip, unsigned short int port); //connects to given ip:port
 	static std::unique_ptr<SocketImplementation> waitForConnection(const char *ip, unsigned short int port, const std::chrono::milliseconds &timeout); //listens for connection on given port
 	void sendData(const void *buffer, size_t size); //blocks until size bytes have been sent or an error occurs
-	void receiveData(void *buffer, size_t size); //blocks until size bytes have been read
+	void receiveData(void *buffer, size_t size, const std::chrono::milliseconds &timeout); //blocks until size bytes have been read
 	SocketImplementation(const SocketImplementation &) = delete; //no copying SocketImplementations
 	SocketImplementation(SocketImplementation &&other);
 	~SocketImplementation();
@@ -49,7 +49,6 @@ private:
 			throw;
 		}
 	}
-	struct ConnectionTimeoutException{};
 };
 
 WsaInit SocketImplementation::wsaInit;
@@ -69,8 +68,8 @@ std::unique_ptr<Socket> Socket::waitForConnection(const char *ip, unsigned short
 void Socket::sendData(const void *buffer, size_t size){
 	return static_cast<SocketImplementation *>(implementation)->sendData(buffer, size);
 }
-void Socket::receiveData(void *buffer, size_t size){
-	return static_cast<SocketImplementation *>(implementation)->receiveData(buffer, size);
+void Socket::receiveData(void *buffer, size_t size, const std::chrono::milliseconds &timeout){
+	return static_cast<SocketImplementation *>(implementation)->receiveData(buffer, size, timeout);
 }
 Socket::Socket(Socket &&other) : implementation(nullptr){
 	using namespace std;
@@ -89,6 +88,13 @@ SocketImplementation SocketImplementation::getConnection(const char *ip, unsigne
 	return SocketImplementation(ip, port, std::move(connector));
 }
 
+timeval getTimevalFromDuration(const std::chrono::microseconds &t){
+	timeval retval;
+	retval.tv_sec = std::chrono::duration_cast<std::chrono::seconds>(t).count();
+	retval.tv_usec = t.count() % 1000000;
+	return retval;
+}
+
 std::unique_ptr<SocketImplementation> SocketImplementation::waitForConnection(const char *ip, unsigned short int port, const std::chrono::milliseconds &timeout){
 	/*
 	TODO: Clean up fishiness: This function uses exceptions to communicate a timeout. Since a timeout is a normal control flow,
@@ -99,15 +105,13 @@ std::unique_ptr<SocketImplementation> SocketImplementation::waitForConnection(co
 			throw std::runtime_error("connect failed with error " + std::to_string(WSAGetLastError()));
 		if (listen(s, 1) == SOCKET_ERROR)
 			throw std::runtime_error("listen failed with error " + std::to_string(WSAGetLastError()));
-		timeval selectTimeout;
-		selectTimeout.tv_sec = std::chrono::duration_cast<std::chrono::seconds>(timeout).count();
-		selectTimeout.tv_usec = std::chrono::duration_cast<std::chrono::microseconds>(timeout).count() % 1000000;
+		timeval selectTimeout = getTimevalFromDuration(timeout);
 		fd_set fds;
 		fds.fd_count = 1;
 		fds.fd_array[0] = s;
 		switch (select(0, &fds, nullptr, nullptr, &selectTimeout)){
 			case 0: //timeout
-				throw ConnectionTimeoutException();
+				throw Socket::ConnectionTimeoutException();
 			case 1: //ready for accept
 				break;
 			case SOCKET_ERROR:
@@ -127,7 +131,7 @@ std::unique_ptr<SocketImplementation> SocketImplementation::waitForConnection(co
 		auto sock = SocketImplementation(ip, port, std::move(connector));
 		return std::make_unique<SocketImplementation>(std::move(sock));
 	}
-	catch (ConnectionTimeoutException){
+	catch (Socket::ConnectionTimeoutException){
 		return nullptr;
 	}
 }
@@ -137,9 +141,23 @@ void SocketImplementation::sendData(const void *buffer, size_t size){
 		throw std::runtime_error("send failed with error " + std::to_string(WSAGetLastError()));
 }
 
-void SocketImplementation::receiveData(void *buffer, size_t size){
+void SocketImplementation::receiveData(void *buffer, size_t size, const std::chrono::milliseconds &timeout){
 	auto res = 0;
 	do {
+		fd_set fds;
+		fds.fd_count = 1;
+		fds.fd_array[0] = s;
+		auto t = getTimevalFromDuration(timeout);
+		switch (select(0, &fds, nullptr, nullptr, &t)){
+			case 0: //timeout
+				throw Socket::ConnectionTimeoutException();
+			case 1: //ready for accept
+				break;
+			case SOCKET_ERROR:
+				throw std::runtime_error("select failed with error " + std::to_string(WSAGetLastError()));
+			default: //no idea what happened
+				throw std::runtime_error("select failed with unanticipated behavior");
+		}
 		res = recv(s, static_cast<char *>(buffer)+res, size - res, 0);
 		if (size == res)
 			return;

@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 2.8)
 PROJECT(AliceBob)
-execute_process(COMMAND python ../../../RPC-gen.py ../Bob/Bob.h ../Alice RESULT_VARIABLE failure)
+
+execute_process(COMMAND python ../../../RPC-gen.py ../Bob/Bob.h ../Alice WORKING_DIRECTORY $(CMAKE_CURRENT_SOURCE_DIR) RESULT_VARIABLE failure)
 if(failure)
 	message(FATAL_ERROR "Failed generating RPC files")
 endif(failure)
-execute_process(COMMAND python ../../../RPC-gen.py ../Alice/Alice.h ../Bob RESULT_VARIABLE failure)
+execute_process(COMMAND python ../../../RPC-gen.py ../Alice/Alice.h ../Bob WORKING_DIRECTORY $(CMAKE_CURRENT_SOURCE_DIR) RESULT_VARIABLE failure)
 if(failure)
 	message(FATAL_ERROR "Failed generating RPC files")
 endif(failure)
