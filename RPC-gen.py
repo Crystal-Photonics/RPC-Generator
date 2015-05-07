@@ -699,10 +699,10 @@ def setStructTypes(structs):
         datatypeDeclarations.append(datatypes[signature].getTypeDeclaration())
 
 def getStructParameter(parameter):
-    #print(parameter, flush=True)
+    #print(parameter)
     basetype = getDatatype(parameter["type"], currentFile, parameter["line_number"])
     if 'multi_dimensional_array_size' in parameter:
-        print(parameter["multi_dimensional_array_size"], flush=True)
+        print(parameter["multi_dimensional_array_size"])
         return ArrayDatatype(parameter["array_size"], basetype, parameter["name"])
     if 'array_size' in parameter:
         return ArrayDatatype(parameter["array_size"], basetype, parameter["name"])
@@ -724,7 +724,7 @@ def getFunctionReturnType(function):
 def getParameterArraySizes(parameter):
     try:
         tokens = parameter["method"]["debug"].split(" ")
-        #print(tokens, flush=True)
+        #print(tokens)
     except KeyError:
         if "array_size" in parameter:
             return [int(parameter["array_size"])]
