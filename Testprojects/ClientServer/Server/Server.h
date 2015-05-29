@@ -4,6 +4,8 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#pragma RPC prefix RPC_UART_
+
 int32_t simpleTest(int32_t i);
 
 void arrayTest(char text_inout[42]);

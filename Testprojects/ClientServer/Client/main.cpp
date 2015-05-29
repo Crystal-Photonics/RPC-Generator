@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
-#include "RPC_server.h"
+#include "RPC_UART_server.h"
 #include <thread>
 #include <cassert>
 #include <vector>
@@ -36,10 +36,10 @@ void parser(){
 						buffer.push_back(c);
 						if (quitParser)
 							return;
-						switch (RPC_get_answer_length(buffer.data(), buffer.size()).result){
-							case RPC_COMMAND_INCOMPLETE:
+						switch (RPC_UART_get_answer_length(buffer.data(), buffer.size()).result){
+							case RPC_UART_COMMAND_INCOMPLETE:
 								continue;
-							case RPC_COMMAND_UNKNOWN:
+							case RPC_UART_COMMAND_UNKNOWN:
 								//+quick hack for testing
 								if (buffer.size() == 1){
 									if (buffer[0] == 'q'){
@@ -55,14 +55,14 @@ void parser(){
 								std::cout << "dropping " << buffer.size() << " bytes of data\n";
 								buffer.clear();
 								continue;
-							case RPC_SUCCESS:
+							case RPC_UART_SUCCESS:
 								break;
 							default:
-								throw std::runtime_error("unknown result from RPC_get_answer_length: " + std::to_string(RPC_get_answer_length(buffer.data(), buffer.size()).result));
+								throw std::runtime_error("unknown result from RPC_get_answer_length: " + std::to_string(RPC_UART_get_answer_length(buffer.data(), buffer.size()).result));
 						}
 						break;
 					}
-					RPC_parse_answer(buffer.data(), buffer.size());
+					RPC_UART_parse_answer(buffer.data(), buffer.size());
 					buffer.clear();
 				}
 			}
@@ -79,7 +79,7 @@ void parser(){
 }
 
 #define TEST_FUNCTION(FUNCTION, ...)\
-if (FUNCTION(__VA_ARGS__) == RPC_SUCCESS)\
+if (FUNCTION(__VA_ARGS__) == RPC_UART_SUCCESS)\
 std::cout << #FUNCTION << " succeeded\n";\
 else{std::cout << #FUNCTION << " failed\n";assert(!#FUNCTION " failed\n");}
 
@@ -127,11 +127,11 @@ void logic(){
 int main()
 {
 	try{
-		RPC_Parser_init();
+		RPC_UART_Parser_init();
 		auto logicthread = std::thread(logic);
 		parser();
 		logicthread.join();
-		RPC_Parser_exit();
+		RPC_UART_Parser_exit();
 	}
 	catch (const std::runtime_error &error){
 		std::cout << error.what() << '\n';

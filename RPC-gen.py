@@ -14,6 +14,65 @@ datatypes = {}
 datatypeDeclarations = []
 defines = {}
 currentFile = ""
+prefix = "RPC_NOT_OVERWRITTEN_" #change prefix inside the header with #pragma RPC prefix XMPL_
+
+functionIgnoreList = []
+functionNoAnswerList = []
+def evaluatePragmas(pragmas):
+    for p in pragmas:
+        program, command = p.split(" ", 1)
+        if program == "RPC":
+            try:
+                command, target = command.split(" ", 1)
+            except ValueError:
+                assert False, "Invalid command or parameter: {} in {}".format(command, currentFile)
+            if command == "ignore":
+                assert len(target.split(" ")) == 1, "Invalid function name: {} in {}".format(target, currentFile)
+                functionIgnoreList.append(target)
+            elif command == "noanswer":
+                functionNoAnswerList.append(target)
+            elif command == "prefix":
+                global prefix
+                prefix = target
+            else:
+                assert False, "Unknown command {} in {}".format(command, currentFile)
+
+def getFilePaths():
+    #get paths for various files that need to be created. all created files start with prefix
+    #parse input
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument("ServerHeader", help = "Header file with functions that need to be called from the client", type = str)
+    parser.add_argument("ClientDirectory", help = "Destination folder for RPC files", type = str)
+    args = parser.parse_args()
+
+    #check if input is valid
+    from os.path import isfile, isdir, abspath, join, split
+    from os import getcwd
+    assert isfile(args.ServerHeader), args.ServerHeader + " is not an existing file inside " + getcwd()
+    assert args.ServerHeader.endswith(".h"), args.ServerHeader + "Does not appear to be a header file"
+    assert isdir(args.ClientDirectory), args.ClientDirectory + " is not an existing directory inside " + getcwd()
+
+    serverHeaderPath, serverHeaderFilename = split(args.ServerHeader)
+
+    ast = CppHeaderParser.CppHeader(abspath(args.ServerHeader))
+    evaluatePragmas(ast.pragmas)
+    
+    return {
+        "ServerHeader" : abspath(args.ServerHeader),
+        "ServerHeaderFileName" : serverHeaderFilename,
+        "ClientHeader" : join(args.ClientDirectory, prefix + serverHeaderFilename),
+        "ClientImplementation" : join(args.ClientDirectory, prefix + serverHeaderFilename[:-1] + 'c'),
+        prefix + "serviceHeader" : join(serverHeaderPath, prefix +"service.h"),
+        prefix + "serviceImplementation" : join(serverHeaderPath, prefix +"service.c"),
+        "ClientRpcTypesHeader" : join(args.ClientDirectory, prefix +"types.h"),
+        "ServerRpcTypesHeader" : join(serverHeaderPath, prefix +"types.h"),
+        "ClientNetworkImplementation" : join(args.ClientDirectory, prefix +"network_implementation"),
+        "ClientNetworkHeader" : join(args.ClientDirectory, prefix +"network.h"),
+        "ServerNetworkHeader" : join(serverHeaderPath, prefix +"network.h"),
+        "xmldump" : join(args.ClientDirectory, serverHeaderFilename[:-1] + "xml"),
+        }
+getFilePaths()
 
 def getDatatype(signature, file = "???", line = "???"):
     #print(10*"+")
@@ -129,7 +188,7 @@ class IntegralDatatype(Datatype):
     identifier = identifier,
     type = self.signature,
     size = self.size_bytes,
-    datapush = "".join(indention * '\t' + "RPC_push_byte((unsigned char)(" + IntegralDatatype.getByte(i, identifier) + "));\n" for i in range(self.size_bytes)), #5
+    datapush = "".join(indention * '\t' + prefix + "push_byte((unsigned char)(" + IntegralDatatype.getByte(i, identifier) + "));\n" for i in range(self.size_bytes)), #5
     )
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
@@ -237,35 +296,36 @@ class ArrayDatatype(Datatype):
         return """
 {indention}/* writing array {name} with {numberOfElements} elements */
 {indention}{{
-{indention}	int RPC_COUNTER_VAR{indentID};
-{indention}	for (RPC_COUNTER_VAR{indentID} = 0; RPC_COUNTER_VAR{indentID} < {numberOfElements}; RPC_COUNTER_VAR{indentID}++){{
+{indention}	int {prefix}COUNTER_VAR{indentID};
+{indention}	for ({prefix}COUNTER_VAR{indentID} = 0; {prefix}COUNTER_VAR{indentID} < {numberOfElements}; {prefix}COUNTER_VAR{indentID}++){{
 {serialization}
 {indention}	}}
 {indention}}}""".format(
     name = identifier,
     numberOfElements = self.numberOfElements,
     indention = indention * '\t',
-    serialization = self.datatype.stringify("" + identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2),
+    serialization = self.datatype.stringify("" + identifier + "[{}COUNTER_VAR{}]".format(prefix, indention), indention + 2),
     indentID = indention,
+    prefix = prefix,
     )
     def unstringify(self, destination, identifier, indention):
         if self.numberOfElements == "1":
             #no loop required for 1 element
             return "{0}{1}".format(indention * '\t', self.datatype.unstringify(destination, "(*" + identifier + ")", indention))
         return """
-{3}/* reading array {0} with {2} elements */
-{3}{{
-{3}	int RPC_COUNTER_VAR{5};
-{3}	for (RPC_COUNTER_VAR{5} = 0; RPC_COUNTER_VAR{5} < {2}; RPC_COUNTER_VAR{5}++){{
-{4}
-{3}	}}
-{3}}}""".format(
-    identifier, #0
-    None, #1
-    self.numberOfElements, #2
-    indention * '\t', #3
-    self.datatype.unstringify(destination, identifier + "[RPC_COUNTER_VAR{0}]".format(indention), indention + 2), #4
-    indention, #5
+{indention}/* reading array {identifier} with {noe} elements */
+{indention}{{
+{indention}	int {prefix}COUNTER_VAR{ID};
+{indention}	for ({prefix}COUNTER_VAR{ID} = 0; {prefix}COUNTER_VAR{ID} < {noe}; {prefix}COUNTER_VAR{ID}++){{
+{payload}
+{indention}	}}
+{indention}}}""".format(
+    identifier = identifier,
+    noe = self.numberOfElements,
+    indention = indention * '\t',
+    payload = self.datatype.unstringify(destination, identifier + "[{}COUNTER_VAR{}]".format(prefix, indention), indention + 2),
+    ID = indention,
+    prefix = prefix,
     )
     def getSize(self):
         return int(self.numberOfElements) * self.datatype.getSize()
@@ -441,20 +501,20 @@ class Function:
     def getDefinition(self):
         if self.name in functionNoAnswerList:
             return """
-RPC_RESULT {functionname}({parameterdeclaration}){{
-	RPC_RESULT result;
-	RPC_mutex_lock(RPC_mutex_caller);
-	RPC_mutex_lock(RPC_mutex_in_caller);
+{prefix}RESULT {functionname}({parameterdeclaration}){{
+	{prefix}RESULT result;
+	{prefix}mutex_lock({prefix}mutex_caller);
+	{prefix}mutex_lock({prefix}mutex_in_caller);
 
 	/***Serializing***/
-	RPC_push_byte({requestID}); /* save ID */
+	{prefix}push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-	result = RPC_commit();
+	result = {prefix}commit();
 
 	/* This function has been set to receive no answer */
 
-	RPC_mutex_unlock(RPC_mutex_in_caller);
-	RPC_mutex_unlock(RPC_mutex_caller);
+	{prefix}mutex_unlock({prefix}mutex_in_caller);
+	{prefix}mutex_unlock({prefix}mutex_caller);
 	return result;
 }}
 """.format(
@@ -462,45 +522,46 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 1) for p in self.parameterlist if p["parameter"].isInput()),
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
+    prefix = prefix,
     )
         return """
-RPC_RESULT {functionname}({parameterdeclaration}){{
-	RPC_mutex_lock(RPC_mutex_caller);
+{prefix}RESULT {functionname}({parameterdeclaration}){{
+	{prefix}mutex_lock({prefix}mutex_caller);
 	
 	for (;;){{
-		RPC_mutex_lock(RPC_mutex_in_caller);
+		{prefix}mutex_lock({prefix}mutex_in_caller);
 
 		/***Serializing***/
-		RPC_push_byte({requestID}); /* save ID */
+		{prefix}push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-		if (RPC_commit() == RPC_SUCCESS){{ /* successfully sent request */
-			if (RPC_mutex_lock_timeout(RPC_mutex_answer)){{ /* Wait for answer to arrive */
-				if (*RPC_buffer++ != {answerID}){{ /* We got an incorrect answer */
-					RPC_mutex_unlock(RPC_mutex_in_caller);
-					RPC_mutex_lock(RPC_mutex_parsing_complete);
-					RPC_mutex_unlock(RPC_mutex_parsing_complete);
-					RPC_mutex_unlock(RPC_mutex_answer);
+		if ({prefix}commit() == {prefix}SUCCESS){{ /* successfully sent request */
+			if ({prefix}mutex_lock_timeout({prefix}mutex_answer)){{ /* Wait for answer to arrive */
+				if (*{prefix}buffer++ != {answerID}){{ /* We got an incorrect answer */
+					{prefix}mutex_unlock({prefix}mutex_in_caller);
+					{prefix}mutex_lock({prefix}mutex_parsing_complete);
+					{prefix}mutex_unlock({prefix}mutex_parsing_complete);
+					{prefix}mutex_unlock({prefix}mutex_answer);
 					continue; /* Try if next answer is correct */
 				}}
 				/***Deserializing***/
 {outputParameterDeserialization}
-				RPC_mutex_unlock(RPC_mutex_in_caller);
-				RPC_mutex_lock(RPC_mutex_parsing_complete);
-				RPC_mutex_unlock(RPC_mutex_parsing_complete);
-				RPC_mutex_unlock(RPC_mutex_answer);
-				RPC_mutex_unlock(RPC_mutex_caller);
-				return RPC_SUCCESS;
+				{prefix}mutex_unlock({prefix}mutex_in_caller);
+				{prefix}mutex_lock({prefix}mutex_parsing_complete);
+				{prefix}mutex_unlock({prefix}mutex_parsing_complete);
+				{prefix}mutex_unlock({prefix}mutex_answer);
+				{prefix}mutex_unlock({prefix}mutex_caller);
+				return {prefix}SUCCESS;
 			}}
 			else {{ /* We failed to get an answer due to timeout */
-				RPC_mutex_unlock(RPC_mutex_in_caller);
-				RPC_mutex_unlock(RPC_mutex_caller);
-				return RPC_FAILURE;
+				{prefix}mutex_unlock({prefix}mutex_in_caller);
+				{prefix}mutex_unlock({prefix}mutex_caller);
+				return {prefix}FAILURE;
 			}}
 		}}
 		else {{ /* Sending request failed */
-			RPC_mutex_unlock(RPC_mutex_in_caller);
-			RPC_mutex_unlock(RPC_mutex_caller);
-			return RPC_FAILURE;
+			{prefix}mutex_unlock({prefix}mutex_in_caller);
+			{prefix}mutex_unlock({prefix}mutex_caller);
+			return {prefix}FAILURE;
 		}}
 	}}
 	/* assert_dead_code; */
@@ -511,12 +572,14 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 2) for p in self.parameterlist if p["parameter"].isInput()),
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
-    outputParameterDeserialization = "".join(p["parameter"].unstringify("RPC_buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput()),
+    outputParameterDeserialization = "".join(p["parameter"].unstringify(prefix + "buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput()),
+    prefix = prefix,
     )
     def getDeclaration(self):
-        return "RPC_RESULT {0}({1});".format(
-            self.name, #0
-            self.getParameterDeclaration(), #1
+        return "{}RESULT {}({});".format(
+            prefix,
+            self.name,
+            self.getParameterDeclaration(),
             )
     def getRequestParseCase(self, buffer):
         if self.name in functionNoAnswerList:
@@ -548,9 +611,9 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 		/***Call function***/
 			{functioncall}
 		/***send return value and output parameters***/
-			RPC_push_byte({ID_plus_1});
+			{prefix}push_byte({ID_plus_1});
 			{outputParameterSerialization}
-			RPC_commit();
+			{prefix}commit();
 		}}
 		break;""".format(
     ID = self.ID * 2,
@@ -559,7 +622,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput()),
     functioncall = self.getCall(),
     outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput()),
-    ID_plus_1 = self.ID * 2 + 1
+    ID_plus_1 = self.ID * 2 + 1,
+    prefix = prefix,
     )
     def getAnswerSizeCase(self, buffer):
         if self.name in functionNoAnswerList:
@@ -576,8 +640,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
 			else{{
 				returnvalue.size = 3;
-				returnvalue.result = RPC_COMMAND_INCOMPLETE;
-			}}""".format(buffer = buffer)
+				returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+			}}""".format(buffer = buffer, prefix = prefix)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
         return """\t\tcase {ID}: /* {declaration} */
@@ -605,8 +669,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
 			else{{
 				returnvalue.size = 3;
-				returnvalue.result = RPC_COMMAND_INCOMPLETE;
-			}}""".format(buffer = buffer)
+				returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+			}}""".format(buffer = buffer, prefix = prefix)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
         return """
@@ -827,9 +891,9 @@ def getFunction(function):
 
 def checkDefines(defines):
     checklist = (
-        ("RPC_SEND", "A #define RPC_SEND is required that takes a const void * and a size and sends data over the network. Example: #define RPC_SEND send"),
-        ("RPC_SLEEP", "A #define RPC_SLEEP is required that makes the current thread sleep until RPC_WAKEUP is called or a timeout occured. Returns whether RPC_WAKEUP was called (and a timeout did not occur)"),
-        ("RPC_WAKEUP", "A #define RPC_WAKEUP is required that makes the thread sleeping due to RPC_SLEEP wake up"),
+        (prefix + "SEND", "A #define {}SEND is required that takes a const void * and a size and sends data over the network. Example: #define {}SEND send".format(prefix)),
+        (prefix + "SLEEP", "A #define {}SLEEP is required that makes the current thread sleep until {}WAKEUP is called or a timeout occured. Returns whether {}WAKEUP was called (and a timeout did not occur)".format(prefix)),
+        (prefix + "WAKEUP", "A #define {}WAKEUP is required that makes the thread sleeping due to {}SLEEP wake up".format(prefix)),
         )
     for c in checklist:
         success = False
@@ -872,35 +936,36 @@ def getGenericHeader(version):
 """.format(version, getNonstandardTypedefs())
 
 def getSizeFunction(functions, clientHeader):
-    return """#include "RPC_network.h"
-#include "{}"
+    return """#include "{prefix}network.h"
+#include "{clientHeader}"
 
 /* Receives a pointer to a (partly) received message and it's size.
-   Returns a result and a size. If size equals RPC_SUCCESS then size is the
-   size that the message is supposed to have. If result equals RPC_COMMAND_INCOMPLETE
+   Returns a result and a size. If size equals {prefix}SUCCESS then size is the
+   size that the message is supposed to have. If result equals {prefix}COMMAND_INCOMPLETE
    then more bytes are required to determine the size of the message. In this case
    size is the expected number of bytes required to determine the correct size.*/
-RPC_SIZE_RESULT RPC_get_request_size(const void *buffer, size_t size_bytes){{
+{prefix}SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){{
 	const unsigned char *current = (const unsigned char *)buffer;
-	RPC_SIZE_RESULT returnvalue;
+	{prefix}SIZE_RESULT returnvalue;
 
 	if (size_bytes == 0){{
-		returnvalue.result = RPC_COMMAND_INCOMPLETE;
+		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
 		returnvalue.size = 1;
 		return returnvalue;
 	}}
 
-	switch (*current){{ /* switch by message ID */{}
+	switch (*current){{ /* switch by message ID */{cases}
 		default:
-			returnvalue.result = RPC_COMMAND_UNKNOWN;
+			returnvalue.result = {prefix}COMMAND_UNKNOWN;
 			break;
 	}}
-	returnvalue.result = returnvalue.size > size_bytes ? RPC_COMMAND_INCOMPLETE : RPC_SUCCESS;
+	returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
 	return returnvalue;
 }}
 """.format(
-    clientHeader,
-    "".join(f.getRequestSizeCase("current") for f in functions),
+    clientHeader = clientHeader,
+    cases = "".join(f.getRequestSizeCase("current") for f in functions),
+    prefix = prefix,
     )
 
 def getRequestParser(functions):
@@ -908,93 +973,77 @@ def getRequestParser(functions):
     return """
 /* This function parses RPC requests, calls the original function and sends an
    answer. */
-void RPC_parse_request(const void *buffer, size_t size_bytes){{
-	const unsigned char *{1} = (const unsigned char *)buffer;
-	switch (*current++){{ /* switch (request ID) */ {0}
+void {prefix}parse_request(const void *buffer, size_t size_bytes){{
+	const unsigned char *{buffername} = (const unsigned char *)buffer;
+	switch (*current++){{ /* switch (request ID) */ {cases}
 	}}
 }}""".format(
-    "".join(f.getRequestParseCase(buffername) for f in functions), #0
-    buffername, #1
+    cases = "".join(f.getRequestParseCase(buffername) for f in functions),
+    buffername = buffername,
+    prefix = prefix,
     )
 
 def getAnswerParser(functions):
     return """
 /* This function pushes the answers to the caller, doing all the necessary synchronization. */
-void RPC_parse_answer(const void *buffer, size_t size_bytes){
-	RPC_buffer = (const unsigned char *)buffer;
-	assert(RPC_get_answer_length(buffer, size_bytes).result == RPC_SUCCESS);
-	assert(RPC_get_answer_length(buffer, size_bytes).size <= size_bytes);
+void {prefix}parse_answer(const void *buffer, size_t size_bytes){{
+	{prefix}buffer = (const unsigned char *)buffer;
+	assert({prefix}get_answer_length(buffer, size_bytes).result == {prefix}SUCCESS);
+	assert({prefix}get_answer_length(buffer, size_bytes).size <= size_bytes);
 
-	RPC_mutex_unlock(RPC_mutex_answer);
-	RPC_mutex_lock(RPC_mutex_in_caller);
-	RPC_mutex_unlock(RPC_mutex_parsing_complete);
-	RPC_mutex_lock(RPC_mutex_answer);
-	RPC_mutex_lock(RPC_mutex_parsing_complete);
-	RPC_mutex_unlock(RPC_mutex_in_caller);
-}
-"""
+	{prefix}mutex_unlock({prefix}mutex_answer);
+	{prefix}mutex_lock({prefix}mutex_in_caller);
+	{prefix}mutex_unlock({prefix}mutex_parsing_complete);
+	{prefix}mutex_lock({prefix}mutex_answer);
+	{prefix}mutex_lock({prefix}mutex_parsing_complete);
+	{prefix}mutex_unlock({prefix}mutex_in_caller);
+}}
+""".format(prefix = prefix)
 
 def getRPC_Parser_init():
     return """
-void RPC_Parser_init(){
-	if (RPC_initialized)
+void {prefix}Parser_init(){{
+	if ({prefix}initialized)
 		return;
-	RPC_initialized = 1;
-	RPC_mutex_lock(RPC_mutex_parsing_complete);
-	RPC_mutex_lock(RPC_mutex_answer);
-}
-"""
+	{prefix}initialized = 1;
+	{prefix}mutex_lock({prefix}mutex_parsing_complete);
+	{prefix}mutex_lock({prefix}mutex_answer);
+}}
+""".format(prefix = prefix)
 
 def getRPC_Parser_exit():
     return """
-void RPC_Parser_exit(){
-	if (!RPC_initialized)
+void {prefix}Parser_exit(){{
+	if (!{prefix}initialized)
 		return;
-	RPC_initialized = 0;
-	RPC_mutex_unlock(RPC_mutex_parsing_complete);
-	RPC_mutex_unlock(RPC_mutex_answer);
-}
-"""
+	{prefix}initialized = 0;
+	{prefix}mutex_unlock({prefix}mutex_parsing_complete);
+	{prefix}mutex_unlock({prefix}mutex_answer);
+}}
+""".format(prefix = prefix)
 
 def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
-RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size_bytes){{
-	RPC_SIZE_RESULT returnvalue;
+{prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
+	{prefix}SIZE_RESULT returnvalue;
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
-		returnvalue.result = RPC_COMMAND_INCOMPLETE;
+		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
 		returnvalue.size = 1;
 		return returnvalue;
 	}}
 	switch (*current){{
 {answercases}		default:
-			returnvalue.result = RPC_COMMAND_UNKNOWN;
+			returnvalue.result = {prefix}COMMAND_UNKNOWN;
 			return returnvalue;
 	}}
-	returnvalue.result = returnvalue.size > size_bytes ? RPC_COMMAND_INCOMPLETE : RPC_SUCCESS;
+	returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
 	return returnvalue;
 }}
 """.format(
     answercases = "".join(f.getAnswerSizeCase("current") for f in functions),
+    prefix = prefix,
     )
-
-functionIgnoreList = []
-functionNoAnswerList = []
-def evaluatePragmas(pragmas):
-    for p in pragmas:
-        program, command = p.split(" ", 1)
-        if program == "RPC":
-            try:
-                command, target = command.split(" ", 1)
-            except ValueError:
-                assert False, "Invalid command or parameter: {} in {}".format(command, currentFile)
-            if command == "ignore":
-                assert len(target.split(" ")) == 1, "Invalid function name: {} in {}".format(target, currentFile)
-                functionIgnoreList.append(target)
-            elif command == "noanswer":
-                functionNoAnswerList.append(target)
-            else:
-                assert False, "Unknown command {} in {}".format(command, currentFile)
 
 def generateCode(file, xml):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
@@ -1046,39 +1095,6 @@ def generateCode(file, xml):
     answerParser = getAnswerParser(functionlist)
     return rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker
 
-def getFilePaths():
-    #get paths for various files that need to be created. all created files start with "RPC_"
-    #parse input
-    from argparse import ArgumentParser
-    parser = ArgumentParser()
-    parser.add_argument("ServerHeader", help = "Header file with functions that need to be called from the client", type = str)
-    parser.add_argument("ClientDirectory", help = "Destination folder for RPC files", type = str)
-    args = parser.parse_args()
-
-    #check if input is valid
-    from os.path import isfile, isdir, abspath, join, split
-    from os import getcwd
-    assert isfile(args.ServerHeader), args.ServerHeader + " is not an existing file inside " + getcwd()
-    assert args.ServerHeader.endswith(".h"), args.ServerHeader + "Does not appear to be a header file"
-    assert isdir(args.ClientDirectory), args.ClientDirectory + " is not an existing directory inside " + getcwd()
-
-    serverHeaderPath, serverHeaderFilename = split(args.ServerHeader)
-
-    return {
-        "ServerHeader" : abspath(args.ServerHeader),
-        "ServerHeaderFileName" : serverHeaderFilename,
-        "ClientHeader" : join(args.ClientDirectory, "RPC_" + serverHeaderFilename),
-        "ClientImplementation" : join(args.ClientDirectory, "RPC_" + serverHeaderFilename[:-1] + 'c'),
-        "RPC_serviceHeader" : join(serverHeaderPath, "RPC_service.h"),
-        "RPC_serviceImplementation" : join(serverHeaderPath, "RPC_service.c"),
-        "ClientRpcTypesHeader" : join(args.ClientDirectory, "RPC_types.h"),
-        "ServerRpcTypesHeader" : join(serverHeaderPath, "RPC_types.h"),
-        "ClientNetworkImplementation" : join(args.ClientDirectory, "RPC_network_implementation"),
-        "ClientNetworkHeader" : join(args.ClientDirectory, "RPC_network.h"),
-        "ServerNetworkHeader" : join(serverHeaderPath, "RPC_network.h"),
-        "xmldump" : join(args.ClientDirectory, serverHeaderFilename[:-1] + "xml"),
-        }
-
 doNotModifyHeader = """/* This file has been automatically generated by RPC-Generator
    https://github.com/Crystal-Photonics/RPC-Generator
    You should not modify this file manually. */
@@ -1094,13 +1110,15 @@ externC_outro = """
 #endif /* __cplusplus */
 """
 
-rpc_enum = """typedef enum{
-    RPC_SUCCESS,
-    RPC_FAILURE,
-    RPC_COMMAND_UNKNOWN,
-    RPC_COMMAND_INCOMPLETE
-} RPC_RESULT;
-"""
+rpc_enum = """typedef enum{{
+    {prefix}SUCCESS,
+    {prefix}FAILURE,
+    {prefix}COMMAND_UNKNOWN,
+    {prefix}COMMAND_INCOMPLETE
+}} {prefix}RESULT;
+""".format(
+    prefix = prefix,
+    )
 
 def getRPC_serviceHeader(headers, headername, typedeclarations):
     headerDefine = headername.upper()
@@ -1119,46 +1137,47 @@ def getRPC_serviceHeader(headers, headername, typedeclarations):
         includeguardoutro = """#endif /* not {} */""".format(headerDefine),
         rpc_declarations = """#include <stddef.h>
 #include <inttypes.h>
-#include "RPC_types.h"
+#include "{prefix}types.h"
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    The following functions's implementations are automatically generated.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
-void RPC_Parser_init(void);
+void {prefix}Parser_init(void);
 /* Initializes various states required for the RPC. Must be called before any
-   other RPC_* function. Must be called by the parser thread. */
+   other {prefix}* function. Must be called by the parser thread. */
 
-void RPC_Parser_exit(void);
+void {prefix}Parser_exit(void);
 /* Frees various states required for the RPC. Must be called after any
-   other RPC_* function */
+   other {prefix}* function */
 
-RPC_SIZE_RESULT RPC_get_answer_length(const void *buffer, size_t size);
+{prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size);
 /* Returns the (expected) length of the beginning of a (partial) message.
-   If returnvalue.result equals RPC_SUCCESS then returnvalue.size equals the
+   If returnvalue.result equals {prefix}SUCCESS then returnvalue.size equals the
    expected size in bytes.
-   If returnvalue.result equals RPC_COMMAND_UNKNOWN then the buffer does not point
+   If returnvalue.result equals {prefix}COMMAND_UNKNOWN then the buffer does not point
    to the beginning of a recognized message and returnvalue.size has no meaning.
-   If returnvalue.result equals RPC_COMMAND_INCOMPLETE then returnvalue.size equals
+   If returnvalue.result equals {prefix}COMMAND_INCOMPLETE then returnvalue.size equals
    the minimum number of bytes required to figure out the length of the message. */
 
-void RPC_parse_answer(const void *buffer, size_t size);
+void {prefix}parse_answer(const void *buffer, size_t size);
 /* This function parses answer received from the network. {{buffer}} points to the
    buffer that contains the received data and {{size}} contains the number of bytes
    that have been received (NOT the size of the buffer!). This function will wake
-   up RPC_*-functions below that are waiting for an answer.
-   Do not call this function with an incomplete message. Use RPC_get_answer_length
+   up {prefix}*-functions below that are waiting for an answer.
+   Do not call this function with an incomplete message. Use {prefix}get_answer_length
    to make sure it is a complete message. */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    These are the payload functions made available by the RPC generator.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 /* //TODO: copy comments for documentation */
-{}
-{}
+{typedeclarations}
+{headers}
 """.format(
-    typedeclarations,
-    headers,
+    prefix = prefix,
+    typedeclarations = typedeclarations,
+    headers = headers,
     ),)
 
 def getNetworkHeader():
@@ -1168,102 +1187,119 @@ def getNetworkHeader():
    They are required for the RPC to work.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
-{}
-#ifndef RPC_NETWORK_H
-#define RPC_NETWORK_H
+{doNotModifyHeader}
+#ifndef {prefix}NETWORK_H
+#define {prefix}NETWORK_H
 
-#include "RPC_types.h"
+#include "{prefix}types.h"
 
-{}
-void RPC_start_message(size_t size);
+{externC_intro}
+void {prefix}start_message(size_t size);
 /*  This function is called when a new message starts. {{size}} is the number of
     bytes the message will require. In the implementation you can allocate  a
     buffer or write a preamble. The implementation can be empty if you do not
     need to do that. */
 
-void RPC_push_byte(unsigned char byte);
+void {prefix}push_byte(unsigned char byte);
 /* Pushes a byte to be sent via network. You should put all the pushed bytes
-   into a buffer and send the buffer when RPC_commit is called. If you run
+   into a buffer and send the buffer when {prefix}commit is called. If you run
    out of buffer space you can send multiple partial messages as long as the
    other side puts them back together. */
 
-RPC_RESULT RPC_commit(void);
+{prefix}RESULT {prefix}commit(void);
 /* This function is called when a complete message has been pushed using
-   RPC_push_byte. Now is a good time to send the buffer over the network,
+   {prefix}push_byte. Now is a good time to send the buffer over the network,
    even if the buffer is not full yet. You may also want to free the buffer that
-   you may have allocated in the RPC_start_message function.
-   RPC_commit should return RPC_SUCCESS if the buffer has been successfully
-   sent and RPC_FAILURE otherwise. */
+   you may have allocated in the {prefix}start_message function.
+   {prefix}commit should return {prefix}SUCCESS if the buffer has been successfully
+   sent and {prefix}FAILURE otherwise. */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   You need to define 4 mutexes to implement the RPC_mutex_* functions below.
-   See RPC_types.h for a definition of RPC_mutex_id.
+   You need to define 4 mutexes to implement the {prefix}mutex_* functions below.
+   See {prefix}types.h for a definition of {prefix}mutex_id.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
-void RPC_mutex_lock(RPC_mutex_id mutex_id);
+void {prefix}mutex_lock({prefix}mutex_id mutex_id);
 /* Locks the mutex. If it is already locked it yields until it can lock the mutex. */
 
-void RPC_mutex_unlock(RPC_mutex_id mutex_id);
+void {prefix}mutex_unlock({prefix}mutex_id mutex_id);
 /* Unlocks the mutex. The mutex is locked when the function is called. */
 
-char RPC_mutex_lock_timeout(RPC_mutex_id mutex_id);
+char {prefix}mutex_lock_timeout({prefix}mutex_id mutex_id);
 /* Tries to lock a mutex. Returns 1 if the mutex was locked and 0 if a timeout
    occured. The timeout length should be the time you want to wait for an answer
    before giving up. If the time is infinite a lost answer will get the calling
    thread stuck indefinitely. */
-{}
-#endif /* RPC_NETWORK_H */
-""".format(doNotModifyHeader, externC_intro, externC_outro)
+{externC_outro}
+#endif /* {prefix}NETWORK_H */
+""".format(
+    doNotModifyHeader = doNotModifyHeader,
+    externC_intro = externC_intro,
+    externC_outro = externC_outro,
+    prefix = prefix,
+    )
 
 
 
 def getRpcTypesHeader():
-    return """{}
-#ifndef RPC_TYPES_H
-#define RPC_TYPES_H
+    return """{doNotModifyHeader}
+#ifndef {prefix}TYPES_H
+#define {prefix}TYPES_H
 
 #include <stddef.h>
 
-{}
+{rpc_enum}
 typedef struct {{
-	RPC_RESULT result;
+	{prefix}RESULT result;
 	size_t size;
-}} RPC_SIZE_RESULT;
+}} {prefix}SIZE_RESULT;
 
 typedef enum {{
-    RPC_mutex_parsing_complete,
-    RPC_mutex_caller,
-    RPC_mutex_in_caller,
-    RPC_mutex_answer,
-    RPC_MUTEX_COUNT
-}} RPC_mutex_id;
-#define RPC_number_of_mutexes 4
+    {prefix}mutex_parsing_complete,
+    {prefix}mutex_caller,
+    {prefix}mutex_in_caller,
+    {prefix}mutex_answer,
+    {prefix}MUTEX_COUNT
+}} {prefix}mutex_id;
+#define {prefix}number_of_mutexes 4
 
-#endif /* RPC_TYPES_H */
-""".format(doNotModifyHeader, rpc_enum)
+#endif /* {prefix}TYPES_H */
+""".format(
+    doNotModifyHeader = doNotModifyHeader,
+    rpc_enum = rpc_enum,
+    prefix = prefix,
+    )
 
 def getRequestParserHeader():
-    return """{}
-#include "RPC_types.h"
+    return """{doNotModifyHeader}
+#include "{prefix}types.h"
 
-{}
+{externC_intro}
 /* Receives a pointer to a (partly) received message and it's size.
-   Returns a result and a size. If size equals RPC_SUCCESS then size is the
-   size that the message is supposed to have. If result equals RPC_COMMAND_INCOMPLETE
+   Returns a result and a size. If size equals {prefix}SUCCESS then size is the
+   size that the message is supposed to have. If result equals {prefix}COMMAND_INCOMPLETE
    then more bytes are required to determine the size of the message. In this case
    size is the expected number of bytes required to determine the correct size.*/
-RPC_SIZE_RESULT RPC_get_request_size(const void *buffer, size_t size_bytes);
+{prefix}SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes);
 
 /* This function parses RPC requests, calls the original function and sends an
    answer. */
-void RPC_parse_request(const void *buffer, size_t size_bytes);
-{}
-""".format(doNotModifyHeader, externC_intro, externC_outro)
+void {prefix}parse_request(const void *buffer, size_t size_bytes);
+{externC_outro}
+""".format(
+    doNotModifyHeader = doNotModifyHeader,
+    externC_intro = externC_intro,
+    externC_outro = externC_outro,
+    prefix = prefix,
+    )
 
 try:
     root = ET.Element("RPC")
 
     files = getFilePaths()
+    for f in files:
+        print(f)
+    #exit(0)
 
     rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker = generateCode(files["ServerHeader"], root)
 
@@ -1275,22 +1311,23 @@ try:
 #include <stdint.h>
 #include <assert.h>
 #include "{rpc_client_header}"
-#include "RPC_network.h"
+#include "{prefix}network.h"
 
-static const unsigned char *RPC_buffer;
-static char RPC_initialized;
+static const unsigned char *{prefix}buffer;
+static char {prefix}initialized;
 
 {implementation}{externC_outro}
     '''.format(
         doNotModify = doNotModifyHeader,
-        rpc_client_header = "RPC_" + files["ServerHeaderFileName"][:-1] + 'h',
+        rpc_client_header = prefix + files["ServerHeaderFileName"][:-1] + 'h',
         implementation = rpcImplementation,
         externC_outro = externC_outro,
         externC_intro = externC_intro,
+        prefix = prefix,
         )
 
     for file, data in (
-        ("ClientHeader", getRPC_serviceHeader(rpcHeader, "RPC_" + files["ServerHeaderFileName"][:-2] + '_H', getTypeDeclarations())),
+        ("ClientHeader", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderFileName"][:-2] + '_H', getTypeDeclarations())),
         ("ClientRpcTypesHeader", getRpcTypesHeader()),
         ("ServerRpcTypesHeader", getRpcTypesHeader()),
         ("ClientNetworkHeader", getNetworkHeader()),
@@ -1303,8 +1340,8 @@ static char RPC_initialized;
             getRPC_Parser_exit(),
             externC_outro),
          )),
-        ("RPC_serviceHeader", getRequestParserHeader()),
-        ("RPC_serviceImplementation", requestParserImplementation),
+        (prefix + "serviceHeader", getRequestParserHeader()),
+        (prefix + "serviceImplementation", requestParserImplementation),
         ):
         print(files[file])
         f = open(files[file], "w")

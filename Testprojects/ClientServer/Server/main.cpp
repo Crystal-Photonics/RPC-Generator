@@ -1,4 +1,4 @@
-#include "RPC_service.h"
+#include "RPC_UART_service.h"
 #include <vector>
 #include <fstream>
 #include <cassert>
@@ -22,22 +22,22 @@ int main(){
 						unsigned char c;
 						socket->receiveData(&c, 1);
 						buffer.push_back(c);
-						switch (RPC_get_request_size(buffer.data(), buffer.size()).result){
-							case RPC_COMMAND_INCOMPLETE:
+						switch (RPC_UART_get_request_size(buffer.data(), buffer.size()).result){
+							case RPC_UART_COMMAND_INCOMPLETE:
 								continue;
-							case RPC_COMMAND_UNKNOWN:
+							case RPC_UART_COMMAND_UNKNOWN:
 								std::cout << "unknown command received: " << std::string(std::begin(buffer), std::end(buffer)) << '\n';
 								std::cout << "dropping " << buffer.size() << " bytes of data\n";
 								buffer.clear();
 								continue;
-							case RPC_SUCCESS:
+							case RPC_UART_SUCCESS:
 								break;
 							default:
-								throw std::runtime_error("unknown result from RPC_get_request_size: " + std::to_string(RPC_get_request_size(buffer.data(), buffer.size()).result));
+								throw std::runtime_error("unknown result from RPC_get_request_size: " + std::to_string(RPC_UART_get_request_size(buffer.data(), buffer.size()).result));
 						}
 						break;
 					}
-					RPC_parse_request(buffer.data(), buffer.size());
+					RPC_UART_parse_request(buffer.data(), buffer.size());
 					buffer.clear();
 				}
 			}
