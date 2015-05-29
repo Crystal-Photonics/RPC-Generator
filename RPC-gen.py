@@ -699,11 +699,12 @@ def setStructTypes(structs):
         datatypeDeclarations.append(datatypes[signature].getTypeDeclaration())
 
 def getStructParameter(parameter):
-    #print(parameter)
     basetype = getDatatype(parameter["type"], currentFile, parameter["line_number"])
     if 'multi_dimensional_array_size' in parameter:
-        print(parameter["multi_dimensional_array_size"])
-        return ArrayDatatype(parameter["array_size"], basetype, parameter["name"])
+        retval = ArrayDatatype(parameter["multi_dimensional_array_size"][-1], basetype, parameter["name"])
+        for d in reversed(parameter["multi_dimensional_array_size"][:-1]):
+            retval = ArrayDatatype(d, retval, parameter["name"])
+        return retval
     if 'array_size' in parameter:
         return ArrayDatatype(parameter["array_size"], basetype, parameter["name"])
     assert parameter["type"][-1] != '*', "Pointers are not allowed in structs"
