@@ -76,8 +76,16 @@ extern "C" {
 		s_out->n4 = 4;
 	}
 
-	void typedefStructTest(TypedefTestStruct s_in[1]){
-		std::cout << __FUNCTION__ << " with value " << s_in->n << '\n';
+	void typedefStructTest(TypedefTestStruct s_inout[1]){
+		int i = 0;
+		for (auto &l1 : s_inout[0].iaa){
+			for (auto &l2 : l1){
+				for (auto &l3 : l2){
+					l3 = i++;
+				}
+			}
+		}
+		std::cout << __FUNCTION__ << " with value " << s_inout->n << '\n';
 	}
 
 

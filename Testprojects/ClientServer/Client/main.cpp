@@ -114,7 +114,16 @@ void logic(){
 			TestStruct s = {};
 			TEST_FUNCTION(structTest, &s);
 			TypedefTestStruct ts = {};
+			ts.n = 42;
 			TEST_FUNCTION(typedefStructTest, &ts);
+			for (auto &l1 : ts.iaa){
+				for (auto &l2 : l1){
+					for (auto &l3 : l2){
+						std::cout << static_cast<int>(l3) << ' ';
+					}
+				}
+			}
+			std::cout << '\n';
 			//std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 	}

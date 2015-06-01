@@ -45,6 +45,9 @@ int main(){
 				std::cout << "Connection unexpectedly aborted, dropping " << buffer.size() << " bytes of data\n";
 				continue;
 			}
+			catch (Socket::ConnectionTimeoutException){
+				std::cout << "Connection timed out\n";
+			}
 		}
 	}
 	catch (const std::runtime_error &error){

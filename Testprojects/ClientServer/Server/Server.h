@@ -33,8 +33,6 @@ struct TestStruct{
 	int16_t n2;
 	char n3;
 	uint8_t n4;
-	char ar[2];
-	char c;
 };
 
 void structTest(struct TestStruct s_out[1]);
@@ -42,10 +40,10 @@ void structTest(struct TestStruct s_out[1]);
 typedef struct {
 	uint16_t n;
 	uint8_t ia[42];
-	uint8_t iaa[1][2][3][4][5];
+	uint8_t iaa[1][2][3];
 } TypedefTestStruct;
 
-void typedefStructTest(TypedefTestStruct s_in[1]);
+void typedefStructTest(TypedefTestStruct s_inout[1]);
 
 #ifdef __cplusplus
 }
