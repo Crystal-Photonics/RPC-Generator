@@ -14,7 +14,7 @@ datatypes = {}
 datatypeDeclarations = []
 defines = {}
 currentFile = ""
-prefix = "RPC_NOT_OVERWRITTEN_" #change prefix inside the header with #pragma RPC prefix XMPL_
+prefix = "RPC_" #change prefix inside the header with #pragma RPC prefix XMPL_
 
 functionIgnoreList = []
 functionNoAnswerList = []
