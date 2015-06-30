@@ -393,6 +393,14 @@ class StructDatatype(Datatype):
     def setXml(self, xml):
         xml.set("bits", str(self.getSize()))
         xml.set("ctype", self.signature)
+        xml.set("type", "struct")
+        memberpos = 1
+        for e in self.memberList:
+            member = ET.SubElement(xml, "parameter")
+            member.set("memberpos", str(memberpos))
+            memberpos += 1
+            print(e)
+            e["datatype"].setXml(member)
     def declaration(self, identifier):
         return self.signature + " " + identifier
     def stringify(self, identifier, indention):
