@@ -6,6 +6,9 @@ extern "C" {
 
 #pragma RPC prefix RPC_UART_
 
+#pragma RPC noanswer setCPS
+void setCPS(uint16_t cps);
+
 int32_t simpleTest(int32_t i);
 
 void arrayTest(char text_inout[42]);
