@@ -398,8 +398,8 @@ class StructDatatype(Datatype):
         for e in self.memberList:
             member = ET.SubElement(xml, "parameter")
             member.set("memberpos", str(memberpos))
+            member.set("name", e["name"])
             memberpos += 1
-            print(e)
             e["datatype"].setXml(member)
     def declaration(self, identifier):
         return self.signature + " " + identifier
