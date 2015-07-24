@@ -71,6 +71,8 @@ def getFilePaths():
         "ClientNetworkHeader" : join(args.ClientDirectory, prefix +"network.h"),
         "ServerNetworkHeader" : join(serverHeaderPath, prefix +"network.h"),
         "xmldump" : join(args.ClientDirectory, serverHeaderFilename[:-1] + "xml"),
+        "documentation" : join(args.ClientDirectory, serverHeaderFilename[:-1] + "html"),
+        "style" : join(args.ClientDirectory, "documentation.css"),
         }
 getFilePaths()
 
@@ -491,7 +493,16 @@ class Function:
             param.set("name", p["parametername"])
             i += 1
             p["parameter"].setXml(param)
-        
+    def getOriginalDeclaration(self):
+        returnvalue = "void " if self.isVoidReturnType else self.parameterlist[0]["parameter"].declaration("")
+        if returnvalue.endswith(" [1]"):
+            returnvalue = returnvalue[:-3]
+        start = 0 if self.isVoidReturnType else 1
+        return "{returnvalue}{functionname}({parameterlist});".format(
+                returnvalue = returnvalue,
+                functionname = self.name,
+                parameterlist = ", ".join(p["parameter"].declaration(p["parametername"]) for p in self.parameterlist[start:]),
+            )
     def getParameterDeclaration(self):
         parameterdeclaration = ", ".join(p["parameter"].declaration(p["parametername"]) for p in self.parameterlist)
         if parameterdeclaration == "":
@@ -504,7 +515,7 @@ class Function:
         return "{returnvalue}{functionname}({parameterlist});".format(
             returnvalue = returnvalue,
             functionname = self.name,
-            parameterlist = ", ".join(p["parametername"] for p in parameterlist),
+            parameterlist = ", ".join(p["parametername"] for p in self.parameterlist),
             )
     def getDefinition(self):
         if self.name in functionNoAnswerList:
@@ -690,6 +701,102 @@ class Function:
     retvalsetcode = retvalsetcode,
     functiondeclaration = self.getDeclaration(),
     )
+    def getDocumentation(self):
+        class BytePositionCounter:
+            def __init__(self, start = 0):
+                self.position = start
+            def getBytes(self, length):
+                form = "{start}" if length == 1 else "{start}-{end}"
+                self.position += length
+                return form.format(start = self.position - length, end = self.position - 1)
+        pos = BytePositionCounter(start = 1)
+        def stripOneDimensionalArray(vartype):
+            if vartype.endswith(" [1]"):
+                vartype = vartype[:-4]
+            return vartype
+        tableformat = """
+            <td class="content">{bytes}</td>
+            <td class="content">{type}</td>
+            <td class="content">{length}</td>
+            <td class="content">{varname}</td>"""
+        inputvariables = "</tr><tr>".join(tableformat.format(
+                length = p["parameter"].getSize(),
+                varname = p["parametername"],
+                bytes = pos.getBytes(p["parameter"].getSize()),
+                type = stripOneDimensionalArray(p["parameter"].declaration("")),
+                )
+            for p in self.parameterlist if p["parameter"].isInput())
+        ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(ID = self.ID * 2)
+        inputvariables = ID + "</tr><tr>" + inputvariables if len(inputvariables) > 0 else ID
+        pos = BytePositionCounter(start = 1)
+        outputvariables = "</tr><tr>".join(tableformat.format(
+                length = p["parameter"].getSize(),
+                varname = p["parametername"],
+                bytes = pos.getBytes(p["parameter"].getSize()),
+                type = stripOneDimensionalArray(p["parameter"].declaration("")),
+                )
+            for p in self.parameterlist if p["parameter"].isOutput())
+        ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(ID = self.ID * 2 + 1)
+        outputvariables = ID + "</tr><tr>" + outputvariables if len(outputvariables) > 0 else ID
+        structSet = set()
+        def addToSet(structSet, parameter):
+            if isinstance(parameter, StructDatatype):
+                structSet.add(parameter)
+                for m in parameter.memberList:
+                    addToSet(structSet, m)
+            elif isinstance(parameter, ArrayDatatype):
+                addToSet(structSet, parameter.datatype)
+        for p in self.parameterlist:
+            addToSet(structSet, p["parameter"])
+        contentformat = """
+        <p class="static">{name}</p>
+        <table>
+            <tr>
+                <th>Byte</th>
+                <th>Type</th>
+                <th>Length</th>
+                <th>Variable</th>
+            </tr>
+            <tr>
+                {content}
+            </tr>
+        </table>"""
+        structcontent = ""
+        for s in structSet:
+            pos = BytePositionCounter()
+            structcontent += contentformat.format(name = s.signature, content = 
+                "</tr><tr>".join(
+                    tableformat.format(
+                        length = m["datatype"].getSize(),
+                        varname = m["name"],
+                        bytes = pos.getBytes(m["datatype"].getSize()),
+                        type = stripOneDimensionalArray(m["datatype"].declaration("")),
+                    ) for m in s.memberList)
+                )
+        return '''<div class="function">
+        <table class="declarations">
+            <tr class="declarations">
+                <td class="static">Original function</td>
+                <td class="function">{originalfunctiondeclaration}</td>
+            </tr>
+            <tr class="declarations">
+                <td class="static">Generated function</td>
+                <td class="function">{functiondeclaration}</td>
+            </tr>
+        </table>
+        {requestcontent}
+        {replycontent}
+        {structcontent}
+        </table>
+        </div>'''.format(
+            originalfunctiondeclaration = self.getOriginalDeclaration(),
+            functiondeclaration = self.getDeclaration(),
+            requestcontent = contentformat.format(name = "Request", content = inputvariables),
+            replycontent = contentformat.format(name = "Reply", content = outputvariables),
+            structcontent = structcontent,
+            requestID = self.ID * 2,
+            replyID = self.ID * 2 + 1,
+            )
 
 def setIntegralDataType(signature, size_bytes):
     datatypes[signature] = IntegralDatatype(signature, size_bytes)
@@ -1094,14 +1201,16 @@ def generateCode(file, xml):
             functionlist.append(getFunction(f))
     rpcHeader = "\n".join(f.getDeclaration() for f in functionlist)
     rpcImplementation = "\n".join(f.getDefinition() for f in functionlist)
+    documentation = ""
     for f in functionlist:
         entry = ET.SubElement(xml, "function")
         f.getXml(entry)
+        documentation += "\n<hr>\n" + f.getDocumentation()
     from os.path import basename
     requestParserImplementation = externC_intro + '\n' + getSizeFunction(functionlist, basename(file)) + getRequestParser(functionlist) + externC_outro
     answerSizeChecker = getAnswerSizeChecker(functionlist)
     answerParser = getAnswerParser(functionlist)
-    return rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker
+    return rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation
 
 doNotModifyHeader = """/* This file has been automatically generated by RPC-Generator
    https://github.com/Crystal-Photonics/RPC-Generator
@@ -1247,8 +1356,136 @@ char {prefix}mutex_lock_timeout({prefix}mutex_id mutex_id);
     prefix = prefix,
     )
 
+def generateDocumentation(documentation, filename):
+    import datetime
+    now = datetime.datetime.now()
+    return """
+    <html>
+        <head>
+            <title>{filename} - RPC Documentation</title>
+            <link rel="stylesheet" href="documentation.css">
+        </head>
+    <body>
+        <div class="header">
+            <table>
+                <tr>
+                    <th colspan=2>RPC Documentation<th>
+                </tr>
+                <tr>
+                    <td class="static">Generated by:</td><td><a href="https://github.com/Crystal-Photonics/RPC-Generator">RPC-Generator</a></td>
+                </tr>
+                <tr>
+                    <td class="static">File:</td><td>{filename}</td>
+                </tr>
+                <tr>
+                    <td class="static">Date:</td><td>{date}</td>
+                </tr>
+            </table>
+        </div>
+        <div class="content">
+            {documentation}
+        </div>
+    </body>
+</html>""".format(
+    documentation = documentation,
+    filename = filename,
+    date = now.strftime("%Y-%m-%d %H:%M"),
+    )
+def getCss():
+    return """p.static {
+  width: 100%;
+  font-size: 16px;
+  color: #000;
+  margin-left: 20px;
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
 
+p.function {
+    font-size: 24px;
+    font-family: monospace;
+    font-weight: 700;
+    color: #224;
+    margin: 0px;
+}
 
+div.content table, div.content td.content {
+    margin-left: 40px;
+    border: 1px solid #aaa;
+    font-size: 16px;
+    border-collapse: collapse;
+    padding: 8px;
+}
+
+div.content th {
+    font-weight: 600;
+    color: #000;
+    background-color: #aaa;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+hr{
+    margin-top: 100px;
+    margin-bottom: 100px;
+}
+
+div.content{
+    margin-left: 6%;
+    margin-top: 5%;
+    margin-bottom: 6%;
+    margin-right: 6%;
+}
+
+h1{
+    font-size: 200%;
+    font-weight: 500;
+    font-family: sans-serif;
+}
+
+div.header{
+    margin-top: 6%;
+    margin-left: 6%;
+    font-size: 130%;
+}
+
+div.header th{
+    text-align: left;
+    font-size: 250%;
+    padding-bottom: 5%;
+}
+
+div.header td{
+    font-size: 130%;
+    padding-left: 5%;
+}
+
+div.function span.static{
+    font-size: 80%;
+    font-weight: 500;
+    margin-right: 10px;
+}
+
+div.content td.function{
+    font-size: 24px;
+    font-family: monospace;
+    font-weight: 700;
+    color: #224;
+    padding-bottom: 5px;
+    vertical-align: top;
+}
+
+div.content td.static{
+    padding-right: 10px;
+    vertical-align: center;
+}
+
+div.content table.declarations{
+    border: 0px;
+    margin-left: 15px;
+    margin-bottom: -10px;
+}
+"""
 def getRpcTypesHeader():
     return """{doNotModifyHeader}
 #ifndef {prefix}TYPES_H
@@ -1309,7 +1546,7 @@ try:
         print(f)
     #exit(0)
 
-    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker = generateCode(files["ServerHeader"], root)
+    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = generateCode(files["ServerHeader"], root)
 
     requestParserImplementation = doNotModifyHeader + '\n' + requestParserImplementation
 
@@ -1350,6 +1587,8 @@ static char {prefix}initialized;
          )),
         (prefix + "serviceHeader", getRequestParserHeader()),
         (prefix + "serviceImplementation", requestParserImplementation),
+        ("documentation", generateDocumentation(documentation, files["ServerHeaderFileName"])),
+        ("style", getCss()),
         ):
         print(files[file])
         f = open(files[file], "w")

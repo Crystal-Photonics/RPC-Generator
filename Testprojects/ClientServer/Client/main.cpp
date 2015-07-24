@@ -81,7 +81,7 @@ void parser(){
 #define TEST_FUNCTION(FUNCTION, ...)\
 if (FUNCTION(__VA_ARGS__) == RPC_UART_SUCCESS)\
 std::cout << #FUNCTION << " succeeded\n";\
-else{std::cout << #FUNCTION << " failed\n";assert(!#FUNCTION " failed\n");}
+else{std::cout << #FUNCTION << " failed\n"; __debugbreak(); assert(!#FUNCTION " failed\n");}
 
 void logic(){
 	try{
@@ -94,6 +94,8 @@ void logic(){
 			std::cout << "Testing RPC functions:\n";
 
 			int32_t retval;
+			auto success = simpleTest(&retval, 5);
+			assert(retval == 3);
 			TEST_FUNCTION(simpleTest, &retval, 17);
 			char testArray[42] = "Hello World!";
 			TEST_FUNCTION(arrayTest, testArray);

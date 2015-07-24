@@ -29,7 +29,7 @@ public:
 	void receiveData(
 		void *buffer,
 		size_t size,
-		const std::chrono::milliseconds &timeout = std::chrono::milliseconds(100));
+		const std::chrono::milliseconds &timeout = std::chrono::milliseconds(1000));
 	Socket(
 		const Socket &) = delete; //no copying sockets
 	/* Socket(
