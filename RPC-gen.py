@@ -88,17 +88,17 @@ def getDatatype(signature, file = "???", line = "???"):
                 return datatypes[defines[signature]]
             except KeyError:
                 assert "Size for type " + signature + " is unknown."
-    elif len(signatureList) == 2 and signatureList[0] == "struct":
-        assert signature in datatypes, 'Unknown type "{0}" in {1}:{2}'.format(
-            signature, #0
-            file, #1
-            line, #2
+    elif len(signatureList) == 2 and (signatureList[0] == "struct" or signatureList[0] == "enum"):
+        assert signature in datatypes, 'Unknown type "{signature}" in {file}:{line}'.format(
+            signature = signature,
+            file = file,
+            line = line,
             )
         return datatypes[signature]
-    assert False, 'Unknown type "{0}" in {1}:{2}'.format(
-        signature, #0
-        file, #1
-        line, #2
+    assert False, 'Unknown type "{signature}" in {file}:{line}'.format(
+        signature = signature,
+        file = file,
+        line = line,
         )
 
 def getTypeDeclarations():
@@ -196,15 +196,15 @@ class IntegralDatatype(Datatype):
         if self.size_bytes == 0:
             return ""
         return """
-{0}/* reading integral type {3} {1} of size {4} */
-{0}{1} = *{2}++;
-{5}""".format(
-    indention * '\t', #0
-    identifier, #1
-    source, #2
-    self.signature, #3
-    self.size_bytes, #4
-    "".join(indention * '\t' + IntegralDatatype.orByte(i, identifier, "(*" + source + "++)") + ";\n" for i in range(1, self.size_bytes)), #5
+{indention}/* reading integral type {signature} {identifier} of size {size} */
+{indention}{identifier} = *{source}++;
+{deserialization}""".format(
+    indention = indention * '\t',
+    identifier = identifier,
+    source = source,
+    signature = self.signature,
+    size = self.size_bytes,
+    deserialization = "".join(indention * '\t' + IntegralDatatype.orByte(i, identifier, "(*" + source + "++)") + ";\n" for i in range(1, self.size_bytes)),
     )
     def isInput(self):
         return True
@@ -214,54 +214,63 @@ class IntegralDatatype(Datatype):
         assert type(self.size_bytes) == int
         return self.size_bytes
     
-class BasicTransferDatatype(Datatype):
-    def __init__(self, signature, size_bytes, transfertype):
+class EnumDatatype(Datatype):
+    def __init__(self, signature, size_bytes, transfertype, values, name, typedef):
         self.signature = signature
         self.size_bytes = size_bytes
         self.transfertype = transfertype
+        self.values = values
+        self.typedef = typedef
+        self.name = name
     def setXml(self, xml):
         xml.set("bits", str(self.size_bytes * 8))
-        xml.set("ctype", self.signature)
-        typ = ET.SubElement(xml, "basic")
+        xml.set("ctype", "enum")
+        for v in self.values:
+            typ = ET.SubElement(xml, "enum")
+            typ.set("name", v["name"])
+            typ.set("value", str(v["value"]))
+    def getTypeDeclaration(self):
+        declaration = ",\n\t".join("{name} = {value}".format(name = v["name"], value = v["value"]) for v in self.values)
+        if self.typedef:
+            declaration = "typedef enum{{\n\t{declaration}\n}} {name};\n".format(declaration = declaration, name = self.name)
+        else: #no typedef
+            declaration = "enum {name}{{\n\t{declaration}\n}};\n".format(declaration = declaration, name = self.name)
+        return declaration
     def declaration(self, identifier):
         return self.signature + " " + identifier
     def stringify(self, identifier, indention):
-        #TODO: Fix memcpy and destination
         if self.size_bytes == 0:
             return ""
         return """
-{0}/* writing basic type {3} {1} of size {4} */
-{0}{{
-{0}	{5} temp = ({5}){1};
-{0}	memcpy({2}, &temp, {4});
-{0}}}
-{0}{2} += {4};""".format(
-    indention * '\t', #0
-    identifier, #1
-    destination, #2
-    self.signature, #3
-    self.size_bytes, #4
-    self.transfertype, #5
+{indention}/* writing enum type {signature} {identifier} of size {size} */
+{indention}{{
+{indention}\t{transfertype} temp = ({transfertype}){identifier};
+{serialization}
+{indention}}}""".format(
+    indention = indention * '\t',
+    identifier = identifier,
+    serialization = IntegralDatatype(self.transfertype, self.size_bytes).stringify("temp", indention + 1),
+    signature = self.signature,
+    size = self.size_bytes,
+    transfertype = self.transfertype,
     )
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
             return ""
-        if identifier[-1] != ']':
-            return ""
         return """
-{0}/* reading basic type {3}{1} of size {4} */
-{0}{
-{0}	{5} temp;
-{0}	memcpy(&temp, {2}, {4});
-{0}	{2} = temp;
-{0}}
-{0}{2} += {4};""".format(
-    indention * '\t', #0
-    identifier, #1
-    source, #2
-    self.signature, #3
-    self.size_bytes, #4
-    self.transfertype, #5
+{indention}/* reading enum type {signature}{identifier} of size {size} */
+{indention}{{
+{indention}\t{transfertype} temp;
+{deserialization}
+{indention}\t{identifier} = temp;
+{indention}}}""".format(
+    indention = indention * '\t',
+    identifier = identifier,
+    source = source,
+    signature = self.signature,
+    size = self.size_bytes,
+    transfertype = self.transfertype,
+    deserialization = IntegralDatatype(self.transfertype, self.size_bytes).unstringify(source, "temp", indention + 1),
     )
     def isInput(self):
         return True
@@ -515,7 +524,7 @@ class Function:
         return "{returnvalue}{functionname}({parameterlist});".format(
             returnvalue = returnvalue,
             functionname = self.name,
-            parameterlist = ", ".join(p["parametername"] for p in self.parameterlist),
+            parameterlist = ", ".join(p["parametername"] for p in parameterlist),
             )
     def getDefinition(self):
         if self.name in functionNoAnswerList:
@@ -739,15 +748,26 @@ class Function:
         ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(ID = self.ID * 2 + 1)
         outputvariables = ID + "</tr><tr>" + outputvariables if len(outputvariables) > 0 else ID
         structSet = set()
-        def addToSet(structSet, parameter):
+        def addToStructSet(structSet, parameter):
             if isinstance(parameter, StructDatatype):
                 structSet.add(parameter)
                 for m in parameter.memberList:
-                    addToSet(structSet, m)
+                    addToStructSet(structSet, m)
             elif isinstance(parameter, ArrayDatatype):
-                addToSet(structSet, parameter.datatype)
+                addToStructSet(structSet, parameter.datatype)
         for p in self.parameterlist:
-            addToSet(structSet, p["parameter"])
+            addToStructSet(structSet, p["parameter"])
+        enumSet = set()
+        def addToEnumSet(enumSet, parameter):
+            if isinstance(parameter, StructDatatype):
+                for m in parameter.memberList:
+                    addToEnumSet(structSet, m)
+            elif isinstance(parameter, ArrayDatatype):
+                addToEnumSet(enumSet, parameter.datatype)
+            elif isinstance(parameter, EnumDatatype):
+                enumSet.add(parameter)
+        for p in self.parameterlist:
+            addToEnumSet(enumSet, p["parameter"])
         contentformat = """
         <p class="static">{name}</p>
         <table>
@@ -773,6 +793,25 @@ class Function:
                         type = stripOneDimensionalArray(m["datatype"].declaration("")),
                     ) for m in s.memberList)
                 )
+        enumcontent = ""
+        for e in enumSet:
+            pos = BytePositionCounter()
+            enumcontent += """
+        <p class="static">{name}</p>
+        <table>
+            <tr>
+                <th>Name</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                {content}
+            </tr>
+        </table>""".format(name = e.name, content =
+            "</tr><tr>".join('<td class="content">{name}</td><td class="content">{value}</td>'.format(
+                name = m["name"],
+                value = m["value"])
+                    for m in e.values)
+            )
         return '''<div class="function">
         <table class="declarations">
             <tr class="declarations">
@@ -787,6 +826,7 @@ class Function:
         {requestcontent}
         {replycontent}
         {structcontent}
+        {enumcontent}
         </table>
         </div>'''.format(
             originalfunctiondeclaration = self.getOriginalDeclaration(),
@@ -794,6 +834,7 @@ class Function:
             requestcontent = contentformat.format(name = "Request", content = inputvariables),
             replycontent = contentformat.format(name = "Reply", content = outputvariables),
             structcontent = structcontent,
+            enumcontent = enumcontent,
             requestID = self.ID * 2,
             replyID = self.ID * 2 + 1,
             )
@@ -804,8 +845,8 @@ def setIntegralDataType(signature, size_bytes):
 def setBasicDataType(signature, size_bytes):
     datatypes[signature] = BasicDatatype(signature, size_bytes)
 
-def setBasicTransferDataType(signature, size_bytes, transfertype):
-    datatypes[signature] = BasicTransferDatatype(signature, size_bytes, transfertype)
+def setEnumDataType(signature, size_bytes, transfertype, values, name, typedef):
+    datatypes[signature] = EnumDatatype(signature, size_bytes, transfertype, values, name, typedef)
 
 def setPredefinedDataTypes():
     typeslist = (
@@ -840,6 +881,7 @@ def setEnumTypes(enums):
                     #it is something like "- 1000"
                 except:
                     #it is something complicated, assume an int has 4 bytes
+                    minimum = -2**30
                     intValue = 2 ** 30
             minimum = min(minimum, intValue)
             maximum = max(maximum, intValue)
@@ -861,9 +903,10 @@ def setEnumTypes(enums):
             cast = "int32_t"
         else:
             assert False, "enum " + e["name"] +  " appears to require " + str(requiredBytes) + "bytes and does not fit in a 32 bit integer"
-        if minimum < 0:
+        if minimum >= 0:
             cast = "u" + cast
-        setBasicTransferDataType(name, requiredBytes, cast)
+        setEnumDataType(name, requiredBytes, cast, e["values"], e["name"], e["typedef"])
+        datatypeDeclarations.append(datatypes[name].getTypeDeclaration())
 
 def setStructTypes(structs):
     for s in structs:
@@ -1590,7 +1633,7 @@ static char {prefix}initialized;
         ("documentation", generateDocumentation(documentation, files["ServerHeaderFileName"])),
         ("style", getCss()),
         ):
-        print(files[file])
+        print(files[file].split("/")[-1].split("\\")[-1])
         f = open(files[file], "w")
         f.write(data)
         f.close()

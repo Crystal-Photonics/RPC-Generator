@@ -48,6 +48,24 @@ typedef struct {
 
 void typedefStructTest(TypedefTestStruct s_inout[1]);
 
+enum TestEnum{
+	TEa, TEb, TEc = -5
+};
+
+enum TestEnum2{
+	TE2a, TE2b, TE2c = 5, TE2d = TE2c + 1, TE2e = 2 * 2 * 13
+};
+
+void enumTest1(enum TestEnum testEnum);
+enum TestEnum enumTest2();
+
+typedef enum {
+	TTEa, TTEb, TTEc = 5, TTEd = TTEc + 1
+}TypedefTestEnum;
+
+void typedefEnumTest1(TypedefTestEnum testEnum);
+TypedefTestEnum typedefEnumTest2();
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

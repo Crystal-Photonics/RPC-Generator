@@ -18,6 +18,9 @@ void fillString(char *buffer, size_t length, std::string text){
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
+	void setCPS(uint16_t cps){
+		std::cout << __FUNCTION__ " cps = " << cps << '\n';
+	}
 
 	int32_t simpleTest(int32_t i){
 		std::cout << __FUNCTION__ "\n";
@@ -86,6 +89,24 @@ extern "C" {
 			}
 		}
 		std::cout << __FUNCTION__ << " with value " << s_inout->n << '\n';
+	}
+
+	void enumTest1(enum TestEnum testEnum){
+		std::cout << __FUNCTION__ "\n";
+	}
+
+	enum TestEnum enumTest2(){
+		std::cout << __FUNCTION__ "\n";
+		return TEb;
+	}
+
+	void typedefEnumTest1(TypedefTestEnum testEnum){
+		std::cout << __FUNCTION__ "\n";
+	}
+
+	TypedefTestEnum typedefEnumTest2(){
+		std::cout << __FUNCTION__ "\n";
+		return TTEd;
 	}
 
 
