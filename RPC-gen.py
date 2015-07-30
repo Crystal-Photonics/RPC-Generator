@@ -224,7 +224,8 @@ class EnumDatatype(Datatype):
         self.name = name
     def setXml(self, xml):
         xml.set("bits", str(self.size_bytes * 8))
-        xml.set("ctype", "enum")
+        xml.set("ctype", self.declaration("")[:-1])
+        xml.set("type", "enum")
         for v in self.values:
             typ = ET.SubElement(xml, "enum")
             typ.set("name", v["name"])
