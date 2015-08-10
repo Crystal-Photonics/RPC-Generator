@@ -748,6 +748,7 @@ class Function:
             for p in self.parameterlist if p["parameter"].isOutput())
         ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(ID = self.ID * 2 + 1)
         outputvariables = ID + "</tr><tr>" + outputvariables if len(outputvariables) > 0 else ID
+
         structSet = set()
         def addToStructSet(structSet, parameter):
             if isinstance(parameter, StructDatatype):
@@ -813,6 +814,9 @@ class Function:
                 value = m["value"])
                     for m in e.values)
             )
+        replycontent = contentformat.format(name = "Reply", content = outputvariables)
+        if self.name in functionNoAnswerList:
+            replycontent = '<p class="static">Reply: None</p>'
         return '''<div class="function">
         <table class="declarations">
             <tr class="declarations">
@@ -833,7 +837,7 @@ class Function:
             originalfunctiondeclaration = self.getOriginalDeclaration(),
             functiondeclaration = self.getDeclaration(),
             requestcontent = contentformat.format(name = "Request", content = inputvariables),
-            replycontent = contentformat.format(name = "Reply", content = outputvariables),
+            replycontent = replycontent,
             structcontent = structcontent,
             enumcontent = enumcontent,
             requestID = self.ID * 2,
@@ -1247,6 +1251,8 @@ def generateCode(file, xml):
     rpcImplementation = "\n".join(f.getDefinition() for f in functionlist)
     documentation = ""
     for f in functionlist:
+        if f.name in functionIgnoreList:
+            continue
         entry = ET.SubElement(xml, "function")
         f.getXml(entry)
         documentation += "\n<hr>\n" + f.getDocumentation()
