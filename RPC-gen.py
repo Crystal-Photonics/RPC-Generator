@@ -6,7 +6,6 @@
 import sys
 import CppHeaderParser
 from copy import deepcopy
-from enum import Enum
 from itertools import chain
 import xml.etree.ElementTree as ET
 
