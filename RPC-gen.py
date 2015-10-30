@@ -877,7 +877,6 @@ def setEnumTypes(enums):
     for e in enums:
         #calculating minimum and maximim can be done better with map(max, zip(*e["values"])) or something like that
         minimum = maximum = 0
-        for v in e["values"]: #parse the definition of the enum values+
             if type(v["value"]) == type(0): #its just a (default) int
                 intValue = v["value"]
             else:
