@@ -6,7 +6,7 @@
 import sys
 import CppHeaderParser
 from copy import deepcopy
-from enum import Enum
+#from enum import Enum
 from itertools import chain
 import xml.etree.ElementTree as ET
 
@@ -877,7 +877,7 @@ def setEnumTypes(enums):
     for e in enums:
         #calculating minimum and maximim can be done better with map(max, zip(*e["values"])) or something like that
         minimum = maximum = 0
-        for v in e["values"]: #parse the definition of the enum values
+        for v in e["values"]: #parse the definition of the enum values+
             if type(v["value"]) == type(0): #its just a (default) int
                 intValue = v["value"]
             else:
@@ -896,7 +896,7 @@ def setEnumTypes(enums):
             setBasicDataType(name, 0)
             continue
         from math import log, ceil
-        requiredBits = ceil(log(valRange, 2))
+        requiredBits = ceil(log(valRange+1, 2)) # +1 because a 2 element enum would result in 0 bit field
         requiredBytes = ceil(requiredBits / 8.)
         if requiredBytes == 0:
             pass
