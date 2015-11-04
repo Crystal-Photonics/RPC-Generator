@@ -538,7 +538,7 @@ class Function:
 	/***Serializing***/
 	{prefix}push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-	result = {prefix}commit();
+	result = {prefix}message_commit();
 
 	/* This function has been set to receive no answer */
 
@@ -563,7 +563,7 @@ class Function:
 		/***Serializing***/
 		{prefix}push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-		if ({prefix}commit() == {prefix}SUCCESS){{ /* successfully sent request */
+		if ({prefix}message_commit() == {prefix}SUCCESS){{ /* successfully sent request */
 			if ({prefix}mutex_lock_timeout({prefix}mutex_answer)){{ /* Wait for answer to arrive */
 				if (*{prefix}buffer++ != {answerID}){{ /* We got an incorrect answer */
 					{prefix}mutex_unlock({prefix}mutex_in_caller);
@@ -642,7 +642,7 @@ class Function:
 		/***send return value and output parameters***/
 			{prefix}push_byte({ID_plus_1});
 			{outputParameterSerialization}
-			{prefix}commit();
+			{prefix}message_commit();
 		}}
 		break;""".format(
     ID = self.ID * 2,
@@ -1369,16 +1369,16 @@ void {prefix}start_message(size_t size);
 
 void {prefix}push_byte(unsigned char byte);
 /* Pushes a byte to be sent via network. You should put all the pushed bytes
-   into a buffer and send the buffer when {prefix}commit is called. If you run
+   into a buffer and send the buffer when {prefix}message_commit is called. If you run
    out of buffer space you can send multiple partial messages as long as the
    other side puts them back together. */
 
-{prefix}RESULT {prefix}commit(void);
+{prefix}RESULT {prefix}message_commit(void);
 /* This function is called when a complete message has been pushed using
    {prefix}push_byte. Now is a good time to send the buffer over the network,
    even if the buffer is not full yet. You may also want to free the buffer that
    you may have allocated in the {prefix}start_message function.
-   {prefix}commit should return {prefix}SUCCESS if the buffer has been successfully
+   {prefix}message_commit should return {prefix}SUCCESS if the buffer has been successfully
    sent and {prefix}FAILURE otherwise. */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
