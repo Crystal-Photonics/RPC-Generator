@@ -1361,7 +1361,7 @@ def getNetworkHeader():
 #include "{prefix}types.h"
 
 {externC_intro}
-void {prefix}start_message(size_t size);
+void {prefix}message_start(size_t size);
 /*  This function is called when a new message starts. {{size}} is the number of
     bytes the message will require. In the implementation you can allocate  a
     buffer or write a preamble. The implementation can be empty if you do not
@@ -1377,7 +1377,7 @@ void {prefix}message_push_byte(unsigned char byte);
 /* This function is called when a complete message has been pushed using
    {prefix}message_push_byte. Now is a good time to send the buffer over the network,
    even if the buffer is not full yet. You may also want to free the buffer that
-   you may have allocated in the {prefix}start_message function.
+   you may have allocated in the {prefix}message_start function.
    {prefix}message_commit should return {prefix}SUCCESS if the buffer has been successfully
    sent and {prefix}FAILURE otherwise. */
 
