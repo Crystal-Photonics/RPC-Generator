@@ -190,7 +190,7 @@ class IntegralDatatype(Datatype):
     identifier = identifier,
     type = self.signature,
     size = self.size_bytes,
-    datapush = "".join(indention * '\t' + prefix + "push_byte((unsigned char)(" + IntegralDatatype.getByte(i, identifier) + "));\n" for i in range(self.size_bytes)), #5
+    datapush = "".join(indention * '\t' + prefix + "message_push_byte((unsigned char)(" + IntegralDatatype.getByte(i, identifier) + "));\n" for i in range(self.size_bytes)), #5
     )
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
@@ -536,7 +536,7 @@ class Function:
 	{prefix}mutex_lock({prefix}mutex_in_caller);
 
 	/***Serializing***/
-	{prefix}push_byte({requestID}); /* save ID */
+	{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
 	result = {prefix}message_commit();
 
@@ -561,7 +561,7 @@ class Function:
 		{prefix}mutex_lock({prefix}mutex_in_caller);
 
 		/***Serializing***/
-		{prefix}push_byte({requestID}); /* save ID */
+		{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
 		if ({prefix}message_commit() == {prefix}SUCCESS){{ /* successfully sent request */
 			if ({prefix}mutex_lock_timeout({prefix}mutex_answer)){{ /* Wait for answer to arrive */
@@ -640,7 +640,7 @@ class Function:
 		/***Call function***/
 			{functioncall}
 		/***send return value and output parameters***/
-			{prefix}push_byte({ID_plus_1});
+			{prefix}message_push_byte({ID_plus_1});
 			{outputParameterSerialization}
 			{prefix}message_commit();
 		}}
@@ -1367,7 +1367,7 @@ void {prefix}start_message(size_t size);
     buffer or write a preamble. The implementation can be empty if you do not
     need to do that. */
 
-void {prefix}push_byte(unsigned char byte);
+void {prefix}message_push_byte(unsigned char byte);
 /* Pushes a byte to be sent via network. You should put all the pushed bytes
    into a buffer and send the buffer when {prefix}message_commit is called. If you run
    out of buffer space you can send multiple partial messages as long as the
@@ -1375,7 +1375,7 @@ void {prefix}push_byte(unsigned char byte);
 
 {prefix}RESULT {prefix}message_commit(void);
 /* This function is called when a complete message has been pushed using
-   {prefix}push_byte. Now is a good time to send the buffer over the network,
+   {prefix}message_push_byte. Now is a good time to send the buffer over the network,
    even if the buffer is not full yet. You may also want to free the buffer that
    you may have allocated in the {prefix}start_message function.
    {prefix}message_commit should return {prefix}SUCCESS if the buffer has been successfully
@@ -1385,6 +1385,9 @@ void {prefix}push_byte(unsigned char byte);
    You need to define 4 mutexes to implement the {prefix}mutex_* functions below.
    See {prefix}types.h for a definition of {prefix}mutex_id.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+   
+void {prefix}mutex_init(void);
+/* Initializes all rpc mutexes. */
 
 void {prefix}mutex_lock({prefix}mutex_id mutex_id);
 /* Locks the mutex. If it is already locked it yields until it can lock the mutex. */
