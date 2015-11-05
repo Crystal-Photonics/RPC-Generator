@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 PROJECT(ClientServer)
-execute_process(COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/../../../RPC-gen.py ${CMAKE_CURRENT_SOURCE_DIR}/../Server/server.h ${CMAKE_CURRENT_SOURCE_DIR}/../Client RESULT_VARIABLE failure)
+execute_process(COMMAND python -u ${CMAKE_CURRENT_SOURCE_DIR}/../../../RPC-gen.py ${CMAKE_CURRENT_SOURCE_DIR}/../Client/rpc_config.cfg ${CMAKE_CURRENT_SOURCE_DIR}/../Server/rpc_config.cfg RESULT_VARIABLE failure)
 if(failure)
 	message(FATAL_ERROR "Failed generating RPC files")
 endif(failure)

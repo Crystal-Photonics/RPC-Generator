@@ -42,51 +42,63 @@ def getFilePaths():
     #parse input
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument("ServerHeader",  help = "Header file with functions that need to be called from the client", type = str)
-#    parser.add_argument("ClientDirectory",  help = "Destination folder for RPC files", type = str)
-#	parser.add_argument("ServerDirectory",  help = "Destination folder for RPC files", type = str)
-	
-#	parser.add_argument("ServerGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
-    parser.add_argument("ServerGeneratedSrcAppDir",  help = "Destination folder for RPC files", type = str)
-    parser.add_argument("ServerGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
-
-#	parser.add_argument("ClientIncludeDir",  help = "Destination folder for RPC files", type = str)
-    parser.add_argument("ClientGeneratedSrcDir",  help = "Destination folder for RPC files", type = str)
-    parser.add_argument("ClientGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
-    parser.add_argument("ClientGeneratedHeaderAppDir",  help = "Destination folder for RPC files", type = str)
-	
-    parser.add_argument("ClientGeneratedDocDir",  help = "Destination folder for RPC files", type = str)
+    parser.add_argument("ClientConfig",  help = "Configuration file for the client", type = str)
+    parser.add_argument("ServerConfig",  help = "Configuration file for the server", type = str)
     args = parser.parse_args()
 
     #check if input is valid
     from os.path import isfile, isdir, abspath, join, split
-    from os import getcwd
-    assert isfile(args.ServerHeader), args.ServerHeader + " is not an existing file inside " + getcwd()
-    assert args.ServerHeader.endswith(".h"), args.ServerHeader + "Does not appear to be a header file"
-    #assert isdir(args.ClientDirectory), args.ClientDirectory + " is not an existing directory inside " + getcwd()
+    from os import getcwd, chdir, makedirs
+    assert isfile(args.ClientConfig), args.ClientConfig + " is not an existing file inside " + getcwd()
+    assert isfile(args.ServerConfig), args.ServerConfig + " is not an existing file inside " + getcwd()
+    from configparser import ConfigParser
 
-    serverHeaderPath, serverHeaderFilename = split(args.ServerHeader)
+    retval = {}
 
-    ast = CppHeaderParser.CppHeader(abspath(args.ServerHeader))
+    #check client config for validity
+    clientconfig = ConfigParser()
+    clientconfig.read(args.ClientConfig)
+    chdir(split(args.ClientConfig)[0])
+    retval["CLIENT_CONFIG_PATH"] = split(args.ClientConfig)[0]
+    if "DOCDIR" in clientconfig["configuration"]:
+        makedirs(clientconfig["configuration"]['DOCDIR'], exist_ok=True)
+        retval["CLIENT_" + "DOCDIR"] = abspath(clientconfig["configuration"]["DOCDIR"])
+    else:
+        print("Warning in \"" + args.ClientConfig + "\": No DOCDIR specified. No documentation will be generated.")
+    for d in ("SRCDIR", "GENINCDIR", "SPCINCDIR"):
+        assert d in clientconfig["configuration"], "Error in \"" + args.ClientConfig + "\": No " + d + " specified. Abort."
+        makedirs(clientconfig["configuration"][d], exist_ok=True)
+        retval["CLIENT_" + d] = abspath(clientconfig["configuration"][d])
+
+    #check server config for validity
+    serverconfig = ConfigParser()
+    serverconfig.read(args.ServerConfig)
+    chdir(split(args.ServerConfig)[0])
+    retval["SERVER_CONFIG_PATH"] = split(args.ServerConfig)[0]
+    retval["ServerHeaderName"] = split(abspath(serverconfig["configuration"]["SOURCEHEADER"]))[1][:-2]
+    assert "SOURCEHEADER" in serverconfig["configuration"], "Error in \"" + args.ServerConfig + "\": No SOURCEHEADER specified. Abort."
+    assert isfile(serverconfig["configuration"]["SOURCEHEADER"]), "Error in \"" + args.ServerConfig + "\": Required file \"" + serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
+    retval["ServerHeader"] = abspath(serverconfig["configuration"]["SOURCEHEADER"])
+
+    if "DOCDIR" in serverconfig["configuration"]:
+        makedirs(serverconfig["configuration"]['DOCDIR'], exist_ok=True)
+        retval["SERVER_" + "DOCDIR"] = abspath(serverconfig["configuration"]["DOCDIR"])
+    else:
+        print("Warning in \"" + args.ServerConfig + "\": No DOCDIR specified. No documentation will be generated.")
+    for d in ("SRCDIR", "GENINCDIR"):
+        assert d in serverconfig["configuration"], "Error in \"" + args.ServerConfig + "\": No " + d + " specified. Abort."
+        makedirs(serverconfig["configuration"][d], exist_ok=True)
+        retval["SERVER_" + d] = abspath(serverconfig["configuration"][d])
+
+    ast = CppHeaderParser.CppHeader(abspath(serverconfig["configuration"]["SOURCEHEADER"]))
     evaluatePragmas(ast.pragmas)
-    print('skldfjlsdkfjlskfjlsdkfj:    ',join(args.ClientGeneratedHeaderAppDir, prefix + 'App_' + serverHeaderFilename))
-    return {
-        "ServerHeader" : abspath(args.ServerHeader),
-        "ServerHeaderFileName" : serverHeaderFilename,
-        "ClientHeaderGeneral" : join(args.ClientGeneratedHeaderGeneralDir, prefix +'General'+ serverHeaderFilename),
-		"ClientHeaderApp" : join(args.ClientGeneratedHeaderAppDir, prefix + 'App_' + serverHeaderFilename),
-        "ClientImplementation" : join(args.ClientGeneratedSrcDir,  prefix + serverHeaderFilename[:-1] + 'c'),
-        prefix + "serviceHeader" : join(args.ServerGeneratedHeaderGeneralDir, prefix +"service.h"),
-        prefix + "serviceImplementation" : join(args.ServerGeneratedSrcAppDir, prefix +"service.c"),
-        "ClientRpcTypesHeader" : join(args.ClientGeneratedHeaderGeneralDir, prefix +"types.h"),
-        "ServerRpcTypesHeader" : join(args.ServerGeneratedHeaderGeneralDir, prefix +"types.h"),
-        "ClientNetworkHeader" : join(args.ClientGeneratedHeaderGeneralDir, prefix +"network.h"),
-        "ServerNetworkHeader" : join(args.ServerGeneratedHeaderGeneralDir, prefix +"network.h"),
-        "xmldump" : join(args.ClientGeneratedDocDir, 'docs', serverHeaderFilename[:-1] + "xml"),
-        "documentation" : join(args.ClientGeneratedDocDir,'docs', serverHeaderFilename[:-1] + "html"),
-        "style" : join(args.ClientGeneratedDocDir, 'docs', "documentation.css"),
-        }
-getFilePaths()
+    return retval
+"""
+fp = getFilePaths()
+for k in fp:
+    print(k, ": ", fp[k])
+exit()
+"""
 
 def getDatatype(signature, file = "???", line = "???"):
     #print(10*"+")
@@ -1110,9 +1122,9 @@ def getGenericHeader(version):
 /* The optional original return value is returned through the first parameter */
 """.format(version, getNonstandardTypedefs())
 
-def getSizeFunction(functions, clientHeader):
-    return """#include "{prefix}network.h"
-#include "{clientHeader}"
+def getSizeFunction(functions, clientHeader, parser_to_network_path):
+    return """#include "{network_include}"
+//TODO: #include "{rel_path_to_server_header}"
 
 /* Receives a pointer to a (partly) received message and it's size.
    Returns a result and a size. If size equals {prefix}SUCCESS then size is the
@@ -1138,9 +1150,10 @@ def getSizeFunction(functions, clientHeader):
 	return returnvalue;
 }}
 """.format(
-    clientHeader = clientHeader,
     cases = "".join(f.getRequestSizeCase("current") for f in functions),
     prefix = prefix,
+    network_include = join(parser_to_network_path, prefix + "network.h"),
+    rel_path_to_server_header = "something",
     )
 
 def getRequestParser(functions):
@@ -1220,7 +1233,7 @@ def getAnswerSizeChecker(functions):
     prefix = prefix,
     )
 
-def generateCode(file, xml):
+def generateCode(file, xml, parser_to_network_path):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
     #return None
@@ -1269,7 +1282,7 @@ def generateCode(file, xml):
         f.getXml(entry)
         documentation += "\n<hr>\n" + f.getDocumentation()
     from os.path import basename
-    requestParserImplementation = externC_intro + '\n' + getSizeFunction(functionlist, basename(file)) + getRequestParser(functionlist) + externC_outro
+    requestParserImplementation = externC_intro + '\n' + getSizeFunction(functionlist, basename(file), parser_to_network_path) + getRequestParser(functionlist) + externC_outro
     answerSizeChecker = getAnswerSizeChecker(functionlist)
     answerParser = getAnswerParser(functionlist)
     return rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation
@@ -1289,17 +1302,18 @@ externC_outro = """
 #endif /* __cplusplus */
 """
 
-rpc_enum = """typedef enum{{
-    {prefix}SUCCESS,
-    {prefix}FAILURE,
-    {prefix}COMMAND_UNKNOWN,
-    {prefix}COMMAND_INCOMPLETE
-}} {prefix}RESULT;
-""".format(
-    prefix = prefix,
-    )
+def get_rpc_enum():
+    return """typedef enum{{
+        {prefix}SUCCESS,
+        {prefix}FAILURE,
+        {prefix}COMMAND_UNKNOWN,
+        {prefix}COMMAND_INCOMPLETE
+    }} {prefix}RESULT;
+    """.format(
+        prefix = prefix,
+        )
 
-def getRPC_serviceHeader(headers, headername, typedeclarations):
+def getRPC_serviceHeader(headers, headername, typedeclarations, specific_header_to_types_path):
     headerDefine = headername.upper()
     return """{doNotModify}
 {includeguardintro}
@@ -1316,7 +1330,7 @@ def getRPC_serviceHeader(headers, headername, typedeclarations):
         includeguardoutro = """#endif /* not {} */""".format(headerDefine),
         rpc_declarations = """#include <stddef.h>
 #include <inttypes.h>
-#include "{prefix}types.h"
+#include "{specific_header_to_types_path}"
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    These are the payload functions made available by the RPC generator.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
@@ -1327,6 +1341,7 @@ def getRPC_serviceHeader(headers, headername, typedeclarations):
     prefix = prefix,
     typedeclarations = typedeclarations,
     headers = headers,
+    specific_header_to_types_path = specific_header_to_types_path,
     ),)
 
 def getNetworkHeader():
@@ -1429,8 +1444,8 @@ def generateDocumentation(documentation, filename):
     return """
     <html>
         <head>
-            <title>{filename} - RPC Documentation</title>
-            <link rel="stylesheet" href="documentation.css">
+            <title>{filename}.h - RPC Documentation</title>
+            <link rel="stylesheet" href="{prefix}{filename}.css">
         </head>
     <body>
         <div class="header">
@@ -1442,7 +1457,7 @@ def generateDocumentation(documentation, filename):
                     <td class="static">Generated by:</td><td><a href="https://github.com/Crystal-Photonics/RPC-Generator">RPC-Generator</a></td>
                 </tr>
                 <tr>
-                    <td class="static">File:</td><td>{filename}</td>
+                    <td class="static">File:</td><td>{filename}.h</td>
                 </tr>
                 <tr>
                     <td class="static">Date:</td><td>{date}</td>
@@ -1457,6 +1472,7 @@ def generateDocumentation(documentation, filename):
     documentation = documentation,
     filename = filename,
     date = now.strftime("%Y-%m-%d %H:%M"),
+    prefix=prefix,
     )
 def getCss():
     return """p.static {
@@ -1578,7 +1594,7 @@ typedef enum {{
 #endif /* {prefix}TYPES_H */
 """.format(
     doNotModifyHeader = doNotModifyHeader,
-    rpc_enum = rpc_enum,
+    rpc_enum = get_rpc_enum(),
     prefix = prefix,
     )
 
@@ -1607,13 +1623,10 @@ void {prefix}parse_request(const void *buffer, size_t size_bytes);
 
 try:
     root = ET.Element("RPC")
-
     files = getFilePaths()
-    for f in files:
-        print(f)
-    #exit(0)
+    from os.path import join, split, relpath
 
-    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = generateCode(files["ServerHeader"], root)
+    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = generateCode(files["ServerHeader"], root, relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SRCDIR"]))
 
     requestParserImplementation = doNotModifyHeader + '\n' + requestParserImplementation
 
@@ -1623,7 +1636,7 @@ try:
 #include <stdint.h>
 #include <assert.h>
 #include "{rpc_client_header}"
-#include "{prefix}network.h"
+#include "{network_include}"
 
 static const unsigned char *{prefix}buffer;
 static char {prefix}initialized;
@@ -1631,39 +1644,63 @@ static char {prefix}initialized;
 {implementation}{externC_outro}
     '''.format(
         doNotModify = doNotModifyHeader,
-        rpc_client_header = prefix + files["ServerHeaderFileName"][:-1] + 'h',
+        rpc_client_header = join(relpath(files["CLIENT_SPCINCDIR"], files["CLIENT_SRCDIR"]), prefix + files["ServerHeaderName"] + '.h'),
         implementation = rpcImplementation,
         externC_outro = externC_outro,
         externC_intro = externC_intro,
         prefix = prefix,
+        network_include = join(relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SRCDIR"]), prefix + 'network.h')
         )
 
-    for file, data in (
-        ("ClientHeaderApp", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderFileName"][:-2] + '_H', getTypeDeclarations())),
-        ("ClientRpcTypesHeader", getRpcTypesHeader()),
-        ("ServerRpcTypesHeader", getRpcTypesHeader()),
-        ("ClientNetworkHeader", getNetworkHeader()),
-        ("ServerNetworkHeader", getNetworkHeader()),
-        ("ClientImplementation", "".join((
+    xml = ET.ElementTree()
+    xml._setroot(root)
+
+    dir_name_content = []
+    dir_name_content.append(("CLIENT_SPCINCDIR", files["ServerHeaderName"] + ".h", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderName"] + '_H', getTypeDeclarations(), join(relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SPCINCDIR"]), prefix + "types.h"))))
+    dir_name_content.append(("CLIENT_GENINCDIR", "types.h", getRpcTypesHeader()))
+    dir_name_content.append(("CLIENT_GENINCDIR", "network.h", getNetworkHeader()))
+    clientcode = "".join((
             rpcImplementation,
             answerSizeChecker,
             answerParser,
             getRPC_Parser_init(),
             getRPC_Parser_exit(),
             externC_outro),
-         )),
-        (prefix + "serviceHeader", getRequestParserHeader()),
-        (prefix + "serviceImplementation", requestParserImplementation),
+         )
+    dir_name_content.append(("CLIENT_SRCDIR", files["ServerHeaderName"] + ".c", clientcode))
+    """
         ("documentation", generateDocumentation(documentation, files["ServerHeaderFileName"])),
         ("style", getCss()),
-        ):
-        print(files[file].split("/")[-1].split("\\")[-1])
-        f = open(files[file], "w")
-        f.write(data)
-        f.close()
-    xml = ET.ElementTree()
-    xml._setroot(root)
-    xml.write(files["xmldump"], encoding="UTF-8", xml_declaration = True)
+    ]
+    """
+    print("Writing client files relative to " + files["CLIENT_CONFIG_PATH"] + ":")
+    for dir, name, content in dir_name_content:
+        print("\t" + relpath(join(files[dir], prefix + name), files["CLIENT_CONFIG_PATH"]))
+        with open(join(files[dir], prefix + name), "w") as f: f.write(content)
+    if "CLIENT_DOCDIR" in files:
+        print("\t" + relpath(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), files["CLIENT_CONFIG_PATH"]))
+        with open(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), "w") as f: f.write(generateDocumentation(documentation, files["ServerHeaderName"]))
+        print("\t" + relpath(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), files["CLIENT_CONFIG_PATH"]))
+        with open(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f: f.write(getCss())
+        print("\t" + relpath(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), files["CLIENT_CONFIG_PATH"]))
+        xml.write(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
+
+    dir_name_content = []
+    dir_name_content.append(("SERVER_GENINCDIR", "types.h", getRpcTypesHeader()))
+    dir_name_content.append(("SERVER_GENINCDIR", "network.h", getNetworkHeader()))
+    dir_name_content.append(("SERVER_GENINCDIR", "parser.h", getRequestParserHeader()))
+    dir_name_content.append(("SERVER_SRCDIR", "parser.c", requestParserImplementation))
+    print("Writing server files relative to " + files["SERVER_CONFIG_PATH"] + ":")
+    for dir, name, content in dir_name_content:
+        print("\t" + relpath(join(files[dir], prefix + name), files["SERVER_CONFIG_PATH"]))
+        with open(join(files[dir], prefix + name), "w") as f: f.write(content)
+    if "SERVER_DOCDIR" in files:
+        print("\t" + relpath(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), files["SERVER_CONFIG_PATH"]))
+        with open(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), "w") as f: f.write(generateDocumentation(documentation, files["ServerHeaderName"]))
+        print("\t" + relpath(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), files["SERVER_CONFIG_PATH"]))
+        with open(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f: f.write(getCss())
+        print("\t" + relpath(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), files["SERVER_CONFIG_PATH"]))
+        xml.write(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
 except SystemError:
     import traceback
     traceback.print_exc(1)

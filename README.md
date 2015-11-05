@@ -2,7 +2,7 @@
 A python script that generates code to call functions from one device on another device using a network.
 
 ## Current State
-The project is in a usable stage.
+The project is completely broken, try again next week.
 
 ## Idea
 The RPC generator implements serializing and deserializing of function calls and their arguments. When communicating with a device you normally need to make up a protocol, give each message an ID and serialize, deserialize and interpret arguments. This work is done for you by the RPC generator.
