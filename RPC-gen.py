@@ -46,9 +46,11 @@ def getFilePaths():
 #    parser.add_argument("ClientDirectory",  help = "Destination folder for RPC files", type = str)
 #	parser.add_argument("ServerDirectory",  help = "Destination folder for RPC files", type = str)
 	
+#	parser.add_argument("ServerGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
     parser.add_argument("ServerGeneratedSrcAppDir",  help = "Destination folder for RPC files", type = str)
     parser.add_argument("ServerGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
 
+#	parser.add_argument("ClientIncludeDir",  help = "Destination folder for RPC files", type = str)
     parser.add_argument("ClientGeneratedSrcDir",  help = "Destination folder for RPC files", type = str)
     parser.add_argument("ClientGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
     parser.add_argument("ClientGeneratedHeaderAppDir",  help = "Destination folder for RPC files", type = str)
@@ -1315,36 +1317,6 @@ def getRPC_serviceHeader(headers, headername, typedeclarations):
         rpc_declarations = """#include <stddef.h>
 #include <inttypes.h>
 #include "{prefix}types.h"
-
-/* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   The following functions's implementations are automatically generated.
-   ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-
-void {prefix}Parser_init(void);
-/* Initializes various states required for the RPC. Must be called before any
-   other {prefix}* function. Must be called by the parser thread. */
-
-void {prefix}Parser_exit(void);
-/* Frees various states required for the RPC. Must be called after any
-   other {prefix}* function */
-
-{prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size);
-/* Returns the (expected) length of the beginning of a (partial) message.
-   If returnvalue.result equals {prefix}SUCCESS then returnvalue.size equals the
-   expected size in bytes.
-   If returnvalue.result equals {prefix}COMMAND_UNKNOWN then the buffer does not point
-   to the beginning of a recognized message and returnvalue.size has no meaning.
-   If returnvalue.result equals {prefix}COMMAND_INCOMPLETE then returnvalue.size equals
-   the minimum number of bytes required to figure out the length of the message. */
-
-void {prefix}parse_answer(const void *buffer, size_t size);
-/* This function parses answer received from the network. {{buffer}} points to the
-   buffer that contains the received data and {{size}} contains the number of bytes
-   that have been received (NOT the size of the buffer!). This function will wake
-   up {prefix}*-functions below that are waiting for an answer.
-   Do not call this function with an incomplete message. Use {prefix}get_answer_length
-   to make sure it is a complete message. */
-
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    These are the payload functions made available by the RPC generator.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
@@ -1410,6 +1382,38 @@ char {prefix}mutex_lock_timeout({prefix}mutex_id mutex_id);
    occured. The timeout length should be the time you want to wait for an answer
    before giving up. If the time is infinite a lost answer will get the calling
    thread stuck indefinitely. */
+   
+   
+/* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+   The following functions's implementations are automatically generated.
+   ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+
+void {prefix}Parser_init(void);
+/* Initializes various states required for the RPC. Must be called before any
+   other {prefix}* function. Must be called by the parser thread. */
+
+void {prefix}Parser_exit(void);
+/* Frees various states required for the RPC. Must be called after any
+   other {prefix}* function */
+
+{prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size);
+/* Returns the (expected) length of the beginning of a (partial) message.
+   If returnvalue.result equals {prefix}SUCCESS then returnvalue.size equals the
+   expected size in bytes.
+   If returnvalue.result equals {prefix}COMMAND_UNKNOWN then the buffer does not point
+   to the beginning of a recognized message and returnvalue.size has no meaning.
+   If returnvalue.result equals {prefix}COMMAND_INCOMPLETE then returnvalue.size equals
+   the minimum number of bytes required to figure out the length of the message. */
+
+void {prefix}parse_answer(const void *buffer, size_t size);
+/* This function parses answer received from the network. {{buffer}} points to the
+   buffer that contains the received data and {{size}} contains the number of bytes
+   that have been received (NOT the size of the buffer!). This function will wake
+   up {prefix}*-functions below that are waiting for an answer.
+   Do not call this function with an incomplete message. Use {prefix}get_answer_length
+   to make sure it is a complete message. */
+
+
 {externC_outro}
 #endif /* {prefix}NETWORK_H */
 """.format(
