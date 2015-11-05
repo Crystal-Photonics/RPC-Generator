@@ -42,8 +42,18 @@ def getFilePaths():
     #parse input
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument("ServerHeader", help = "Header file with functions that need to be called from the client", type = str)
-    parser.add_argument("ClientDirectory", help = "Destination folder for RPC files", type = str)
+    parser.add_argument("ServerHeader",  help = "Header file with functions that need to be called from the client", type = str)
+#    parser.add_argument("ClientDirectory",  help = "Destination folder for RPC files", type = str)
+#	parser.add_argument("ServerDirectory",  help = "Destination folder for RPC files", type = str)
+	
+    parser.add_argument("ServerGeneratedSrcAppDir",  help = "Destination folder for RPC files", type = str)
+    parser.add_argument("ServerGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
+
+    parser.add_argument("ClientGeneratedSrcDir",  help = "Destination folder for RPC files", type = str)
+    parser.add_argument("ClientGeneratedHeaderGeneralDir",  help = "Destination folder for RPC files", type = str)
+    parser.add_argument("ClientGeneratedHeaderAppDir",  help = "Destination folder for RPC files", type = str)
+	
+    parser.add_argument("ClientGeneratedDocDir",  help = "Destination folder for RPC files", type = str)
     args = parser.parse_args()
 
     #check if input is valid
@@ -51,28 +61,28 @@ def getFilePaths():
     from os import getcwd
     assert isfile(args.ServerHeader), args.ServerHeader + " is not an existing file inside " + getcwd()
     assert args.ServerHeader.endswith(".h"), args.ServerHeader + "Does not appear to be a header file"
-    assert isdir(args.ClientDirectory), args.ClientDirectory + " is not an existing directory inside " + getcwd()
+    #assert isdir(args.ClientDirectory), args.ClientDirectory + " is not an existing directory inside " + getcwd()
 
     serverHeaderPath, serverHeaderFilename = split(args.ServerHeader)
 
     ast = CppHeaderParser.CppHeader(abspath(args.ServerHeader))
     evaluatePragmas(ast.pragmas)
-    
+    print('skldfjlsdkfjlskfjlsdkfj:    ',join(args.ClientGeneratedHeaderAppDir, prefix + 'App_' + serverHeaderFilename))
     return {
         "ServerHeader" : abspath(args.ServerHeader),
         "ServerHeaderFileName" : serverHeaderFilename,
-        "ClientHeader" : join(args.ClientDirectory, prefix + serverHeaderFilename),
-        "ClientImplementation" : join(args.ClientDirectory, prefix + serverHeaderFilename[:-1] + 'c'),
-        prefix + "serviceHeader" : join(serverHeaderPath, prefix +"service.h"),
-        prefix + "serviceImplementation" : join(serverHeaderPath, prefix +"service.c"),
-        "ClientRpcTypesHeader" : join(args.ClientDirectory, prefix +"types.h"),
-        "ServerRpcTypesHeader" : join(serverHeaderPath, prefix +"types.h"),
-        "ClientNetworkImplementation" : join(args.ClientDirectory, prefix +"network_implementation"),
-        "ClientNetworkHeader" : join(args.ClientDirectory, prefix +"network.h"),
-        "ServerNetworkHeader" : join(serverHeaderPath, prefix +"network.h"),
-        "xmldump" : join(args.ClientDirectory, serverHeaderFilename[:-1] + "xml"),
-        "documentation" : join(args.ClientDirectory, serverHeaderFilename[:-1] + "html"),
-        "style" : join(args.ClientDirectory, "documentation.css"),
+        "ClientHeaderGeneral" : join(args.ClientGeneratedHeaderGeneralDir, prefix +'General'+ serverHeaderFilename),
+		"ClientHeaderApp" : join(args.ClientGeneratedHeaderAppDir, prefix + 'App_' + serverHeaderFilename),
+        "ClientImplementation" : join(args.ClientGeneratedSrcDir,  prefix + serverHeaderFilename[:-1] + 'c'),
+        prefix + "serviceHeader" : join(args.ServerGeneratedHeaderGeneralDir, prefix +"service.h"),
+        prefix + "serviceImplementation" : join(args.ServerGeneratedSrcAppDir, prefix +"service.c"),
+        "ClientRpcTypesHeader" : join(args.ClientGeneratedHeaderGeneralDir, prefix +"types.h"),
+        "ServerRpcTypesHeader" : join(args.ServerGeneratedHeaderGeneralDir, prefix +"types.h"),
+        "ClientNetworkHeader" : join(args.ClientGeneratedHeaderGeneralDir, prefix +"network.h"),
+        "ServerNetworkHeader" : join(args.ServerGeneratedHeaderGeneralDir, prefix +"network.h"),
+        "xmldump" : join(args.ClientGeneratedDocDir, 'docs', serverHeaderFilename[:-1] + "xml"),
+        "documentation" : join(args.ClientGeneratedDocDir,'docs', serverHeaderFilename[:-1] + "html"),
+        "style" : join(args.ClientGeneratedDocDir, 'docs', "documentation.css"),
         }
 getFilePaths()
 
@@ -1625,7 +1635,7 @@ static char {prefix}initialized;
         )
 
     for file, data in (
-        ("ClientHeader", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderFileName"][:-2] + '_H', getTypeDeclarations())),
+        ("ClientHeaderApp", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderFileName"][:-2] + '_H', getTypeDeclarations())),
         ("ClientRpcTypesHeader", getRpcTypesHeader()),
         ("ServerRpcTypesHeader", getRpcTypesHeader()),
         ("ClientNetworkHeader", getNetworkHeader()),
