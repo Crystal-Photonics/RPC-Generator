@@ -53,40 +53,44 @@ def getFilePaths():
     assert isfile(args.ServerConfig), args.ServerConfig + " is not an existing file inside " + getcwd()
     from configparser import ConfigParser
 
+    clientconfigpath = abspath(args.ClientConfig)
+    serverconfigpath = abspath(args.ServerConfig)
+
     retval = {}
 
     #check client config for validity
     clientconfig = ConfigParser()
     clientconfig.read(args.ClientConfig)
-    chdir(split(args.ClientConfig)[0])
-    retval["CLIENT_CONFIG_PATH"] = split(args.ClientConfig)[0]
+
+    chdir(split(clientconfigpath)[0])
+    retval["CLIENT_CONFIG_PATH"] = split(clientconfigpath)[0]
     if "DOCDIR" in clientconfig["configuration"]:
         makedirs(clientconfig["configuration"]['DOCDIR'], exist_ok=True)
         retval["CLIENT_" + "DOCDIR"] = abspath(clientconfig["configuration"]["DOCDIR"])
     else:
-        print("Warning in \"" + args.ClientConfig + "\": No DOCDIR specified. No documentation will be generated.")
+        print("Warning in \"" + clientconfigpath + "\": No DOCDIR specified. No documentation will be generated.")
     for d in ("SRCDIR", "GENINCDIR", "SPCINCDIR"):
-        assert d in clientconfig["configuration"], "Error in \"" + args.ClientConfig + "\": No " + d + " specified. Abort."
+        assert d in clientconfig["configuration"], "Error in \"" + clientconfigpath + "\": No " + d + " specified. Abort."
         makedirs(clientconfig["configuration"][d], exist_ok=True)
         retval["CLIENT_" + d] = abspath(clientconfig["configuration"][d])
 
     #check server config for validity
     serverconfig = ConfigParser()
-    serverconfig.read(args.ServerConfig)
-    chdir(split(args.ServerConfig)[0])
-    retval["SERVER_CONFIG_PATH"] = split(args.ServerConfig)[0]
+    serverconfig.read(serverconfigpath)
+    chdir(split(serverconfigpath)[0])
+    retval["SERVER_CONFIG_PATH"] = split(serverconfigpath)[0]
     retval["ServerHeaderName"] = split(abspath(serverconfig["configuration"]["SOURCEHEADER"]))[1][:-2]
-    assert "SOURCEHEADER" in serverconfig["configuration"], "Error in \"" + args.ServerConfig + "\": No SOURCEHEADER specified. Abort."
-    assert isfile(serverconfig["configuration"]["SOURCEHEADER"]), "Error in \"" + args.ServerConfig + "\": Required file \"" + serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
+    assert "SOURCEHEADER" in serverconfig["configuration"], "Error in \"" + serverconfigpath + "\": No SOURCEHEADER specified. Abort."
+    assert isfile(serverconfig["configuration"]["SOURCEHEADER"]), "Error in \"" + serverconfigpath + "\": Required file \"" + serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
     retval["ServerHeader"] = abspath(serverconfig["configuration"]["SOURCEHEADER"])
 
     if "DOCDIR" in serverconfig["configuration"]:
         makedirs(serverconfig["configuration"]['DOCDIR'], exist_ok=True)
         retval["SERVER_" + "DOCDIR"] = abspath(serverconfig["configuration"]["DOCDIR"])
     else:
-        print("Warning in \"" + args.ServerConfig + "\": No DOCDIR specified. No documentation will be generated.")
+        print("Warning in \"" + serverconfigpath + "\": No DOCDIR specified. No documentation will be generated.")
     for d in ("SRCDIR", "GENINCDIR"):
-        assert d in serverconfig["configuration"], "Error in \"" + args.ServerConfig + "\": No " + d + " specified. Abort."
+        assert d in serverconfig["configuration"], "Error in \"" + serverconfigpath + "\": No " + d + " specified. Abort."
         makedirs(serverconfig["configuration"][d], exist_ok=True)
         retval["SERVER_" + d] = abspath(serverconfig["configuration"][d])
 
