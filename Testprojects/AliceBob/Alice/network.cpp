@@ -1,4 +1,4 @@
-#include "RPC_types.h"
+#include "RPC\Alice_to_Bob\generic_include\RPC_types.h"
 #include <vector>
 #include <fstream>
 #include <cassert>
@@ -12,14 +12,14 @@ std::shared_ptr<Socket> socket; //using shared_ptr for it's thread safety, not f
 std::timed_mutex mutexes[RPC_number_of_mutexes];
 
 extern "C" {
-	void RPC_start_message(size_t size){
+	void RPC_message_start(size_t size){
 		/*  This function is called when a new message starts. {size} is the number of
 		bytes the message will require. In the implementation you can allocate  a
 		buffer or write a preamble. The implementation can be empty if you do not
 		need to do that. */
 	}
 
-	void RPC_push_byte(unsigned char byte){
+	void RPC_message_push_byte(unsigned char byte){
 		/* Pushes a byte to be sent via network. You should put all the pushed bytes
 		into a buffer and send the buffer when RPC_commit is called. If you run
 		out of buffer space you can send multiple partial messages as long as the
@@ -27,7 +27,7 @@ extern "C" {
 		buffer.push_back(byte);
 	}
 
-	RPC_RESULT RPC_commit(void){
+	RPC_RESULT RPC_message_commit(void){
 		/* This function is called when a complete message has been pushed using
 		RPC_push_byte. Now is a good time to send the buffer over the network,
 		even if the buffer is not full yet. You may also want to free the buffer that

@@ -49,8 +49,8 @@ def getFilePaths():
     #check if input is valid
     from os.path import isfile, isdir, abspath, join, split
     from os import getcwd, chdir, makedirs
-    assert isfile(args.ClientConfig), args.ClientConfig + " is not an existing file inside " + getcwd()
-    assert isfile(args.ServerConfig), args.ServerConfig + " is not an existing file inside " + getcwd()
+    assert isfile(args.ClientConfig), "Error: Config file " + args.ClientConfig + " does not exist."
+    assert isfile(args.ServerConfig), "Error: Config file " + args.ServerConfig + " does not exist."
     from configparser import ConfigParser
 
     clientconfigpath = abspath(args.ClientConfig)

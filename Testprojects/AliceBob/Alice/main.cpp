@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
-#include "RPC_bob.h"
+#include "RPC\Alice_to_Bob\specific_include\RPC_Bob.h"
 #include <thread>
 #include <cassert>
 #include <vector>
@@ -8,7 +8,8 @@
 #include "../../SharedSocketCode/socket.h"
 #include "network.h"
 #include <string>
-#include "RPC_service.h"
+#include "RPC\Bob_to_Alice\include\RPC_network.h"
+#include "RPC\Bob_to_Alice\include\RPC_parser.h"
 
 std::atomic<bool> quitParser = false;
 
