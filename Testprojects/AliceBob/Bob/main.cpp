@@ -1,11 +1,11 @@
-#include "RPC\Bob_to_Alice\include\RPC_parser.h"
-#include "RPC\Bob_to_Alice\include\RPC_network.h"
+#include "RPC/Bob_to_Alice/include/RPC_parser.h"
+#include "RPC/Bob_to_Alice/include/RPC_network.h"
 #include <vector>
 #include <fstream>
 #include <cassert>
 #include <iostream>
 #include "network.h"
-#include "RPC\Alice_to_Bob\specific_include\RPC_Alice.h"
+#include "RPC/Alice_to_Bob/specific_include/RPC_Alice.h"
 
 RPC_RESULT handleInput(const std::vector<unsigned char> &v){
 	if (v.size() == 0)
