@@ -1,4 +1,4 @@
-#include "RPC\generic_include\RPC_UART_types.h"
+#include "RPC/generic_include/RPC_UART_types.h"
 #include <vector>
 #include <fstream>
 #include <cassert>

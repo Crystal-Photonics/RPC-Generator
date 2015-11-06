@@ -1,7 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
-#include "RPC\specific_include\RPC_UART_Server.h"
-#include "RPC\generic_include\RPC_UART_network.h"
+#include "RPC/specific_include/RPC_UART_Server.h"
+#include "RPC/generic_include/RPC_UART_network.h"
 #include <thread>
 #include <cassert>
 #include <vector>
