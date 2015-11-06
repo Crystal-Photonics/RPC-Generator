@@ -1,16 +1,17 @@
 project(TestprojectClient)
 cmake_minimum_required(VERSION 2.8)
 
-FILE(GLOB RPC_SOURCES RPC_*.c)
-FILE(GLOB RPC_HEADERS RPC_*.h)
+#hardcoded the paths to the RPC folders that appear in rpc_config.cfg
+#ideally you would generate the next 3 lines from the config
+FILE(GLOB RPC_SOURCES RPC/src/*.c)
+FILE(GLOB RPC_HEADERS RPC/generic_include/*.h)
+FILE(GLOB RPC_HEADERS RPC/specific_include/*.h)
+
 FILE(GLOB SOURCES *.c*)
 FILE(GLOB CPPSOURCES *.c*)
 FILE(GLOB HEADERS *.h*)
 FILE(GLOB NETWORK_HEADERS ../../SharedSocketCode/*.h*)
 FILE(GLOB NETWORK_SOURCES ../../SharedSocketCode/*.c*)
-
-list(REMOVE_ITEM SOURCES RPC_*.c)
-list(REMOVE_ITEM HEADERS RPC_*.h)
 
 source_group(headers FILES ${HEADERS})
 source_group(sources FILES ${SOURCES} ${CPPSOURCES})

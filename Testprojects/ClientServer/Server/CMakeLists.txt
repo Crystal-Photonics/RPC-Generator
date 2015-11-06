@@ -1,8 +1,11 @@
 project(TestprojectServer)
 cmake_minimum_required(VERSION 2.8)
 
-FILE(GLOB RPC_SOURCES RPC_*.c)
-FILE(GLOB RPC_HEADERS RPC_*.h)
+#hardcoded the paths to the RPC folders that appear in rpc_config.cfg
+#ideally you would generate the next 2 lines from the config
+FILE(GLOB RPC_SOURCES RPC/src/*.c)
+FILE(GLOB RPC_HEADERS RPC/include/*.h)
+
 FILE(GLOB SOURCES *.c*)
 FILE(GLOB CPPSOURCES *.c*)
 FILE(GLOB HEADERS *.h*)

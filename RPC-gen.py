@@ -1128,9 +1128,9 @@ def getGenericHeader(version):
 /* The optional original return value is returned through the first parameter */
 """.format(version, getNonstandardTypedefs())
 
-def getSizeFunction(functions, clientHeader, parser_to_network_path):
+def getSizeFunction(functions, clientHeader, parser_to_network_path, parser_to_server_header_path):
     return """#include "{network_include}"
-//TODO: #include "{rel_path_to_server_header}"
+#include "{parser_to_server_header_path}"
 
 /* Receives a pointer to a (partly) received message and it's size.
    Returns a result and a size. If size equals {prefix}SUCCESS then size is the
@@ -1159,7 +1159,7 @@ def getSizeFunction(functions, clientHeader, parser_to_network_path):
     cases = "".join(f.getRequestSizeCase("current") for f in functions),
     prefix = prefix,
     network_include = join(parser_to_network_path, prefix + "network.h"),
-    rel_path_to_server_header = "something",
+    parser_to_server_header_path = parser_to_server_header_path,
     )
 
 def getRequestParser(functions):
@@ -1239,7 +1239,7 @@ def getAnswerSizeChecker(functions):
     prefix = prefix,
     )
 
-def generateCode(file, xml, parser_to_network_path):
+def generateCode(file, xml, parser_to_network_path, parser_to_server_header_path):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
     #return None
@@ -1288,7 +1288,7 @@ def generateCode(file, xml, parser_to_network_path):
         f.getXml(entry)
         documentation += "\n<hr>\n" + f.getDocumentation()
     from os.path import basename
-    requestParserImplementation = externC_intro + '\n' + getSizeFunction(functionlist, basename(file), parser_to_network_path) + getRequestParser(functionlist) + externC_outro
+    requestParserImplementation = externC_intro + '\n' + getSizeFunction(functionlist, basename(file), parser_to_network_path, parser_to_server_header_path) + getRequestParser(functionlist) + externC_outro
     answerSizeChecker = getAnswerSizeChecker(functionlist)
     answerParser = getAnswerParser(functionlist)
     return rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation
@@ -1632,7 +1632,7 @@ try:
     files = getFilePaths()
     from os.path import join, split, relpath
 
-    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = generateCode(files["ServerHeader"], root, relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SRCDIR"]))
+    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = generateCode(files["ServerHeader"], root, relpath(files["SERVER_GENINCDIR"], files["SERVER_SRCDIR"]), relpath(files["ServerHeader"], files["SERVER_SRCDIR"]))
 
     requestParserImplementation = doNotModifyHeader + '\n' + requestParserImplementation
 
