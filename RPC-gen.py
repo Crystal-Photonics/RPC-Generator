@@ -37,6 +37,20 @@ def evaluatePragmas(pragmas):
             else:
                 assert False, "Unknown command {} in {}".format(command, currentFile)
 
+def calculateHash(filenames):
+    from hashlib import md5
+    hash = md5()
+    for fn in filenames:
+        with open(fn, "r") as f:
+            hash.update(f.read().encode("UTF-8"))
+    d = hash.hexdigest()
+    result = ""
+    while len(d) > 0:
+        result += "\\x"
+        result += d[0:2]
+        d = d[2:]
+    return result
+
 def getFilePaths():
     #get paths for various files that need to be created. all created files start with prefix
     #parse input
@@ -93,6 +107,10 @@ def getFilePaths():
         assert d in serverconfig["configuration"], "Error in \"" + serverconfigpath + "\": No " + d + " specified. Abort."
         makedirs(serverconfig["configuration"][d], exist_ok=True)
         retval["SERVER_" + d] = abspath(serverconfig["configuration"][d])
+
+    global hashstring
+    from sys import argv
+    hashstring = calculateHash((argv[0], clientconfigpath, serverconfigpath, retval["ServerHeader"]))
 
     ast = CppHeaderParser.CppHeader(abspath(serverconfig["configuration"]["SOURCEHEADER"]))
     evaluatePragmas(ast.pragmas)
@@ -1334,13 +1352,21 @@ def getRPC_serviceHeader(headers, headername, typedeclarations, specific_header_
         doNotModify = doNotModifyHeader,
         externC_intro = externC_intro,
         externC_outro = externC_outro,
-        includeguardintro = """#ifndef {}
+        includeguardintro = """#ifndef {} 
 #define {}
 """.format(headerDefine, headerDefine),
-        includeguardoutro = """#endif /* not {} */""".format(headerDefine),
+        includeguardoutro = """#endif /* {} */""".format(headerDefine),
         rpc_declarations = """#include <stddef.h>
 #include <inttypes.h>
 #include "{specific_header_to_types_path}"
+
+/* This hash is generated from the Python script that generated this file,
+   the configs passed to it and the source header file specified within the
+   server config. You can use it to identify if both client and server use
+   the same protocol. */
+#define {prefix}HASH "{hashstring}"
+#define {prefix}HASH_SIZE (sizeof {prefix}HASH)
+
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    These are the payload functions made available by the RPC generator.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
@@ -1352,6 +1378,7 @@ def getRPC_serviceHeader(headers, headername, typedeclarations, specific_header_
     typedeclarations = typedeclarations,
     headers = headers,
     specific_header_to_types_path = specific_header_to_types_path,
+    hashstring = hashstring,
     ),)
 
 def getNetworkHeader():
