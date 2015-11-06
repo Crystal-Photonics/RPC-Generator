@@ -577,7 +577,7 @@ class Function:
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
     prefix = prefix,
-    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()),
+    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()) + 1,
     )
         return """
 {prefix}RESULT {functionname}({parameterdeclaration}){{
@@ -630,7 +630,7 @@ class Function:
     parameterdeclaration = self.getParameterDeclaration(),
     outputParameterDeserialization = "".join(p["parameter"].unstringify(prefix + "buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput()),
     prefix = prefix,
-    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()),
+    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()) + 1,
     )
     def getDeclaration(self):
         return "{}RESULT {}({});".format(
@@ -682,7 +682,7 @@ class Function:
     outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput()),
     ID_plus_1 = self.ID * 2 + 1,
     prefix = prefix,
-    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput()),
+    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput()) + 1,
     )
     def getAnswerSizeCase(self, buffer):
         if self.name in functionNoAnswerList:
