@@ -560,7 +560,7 @@ class Function:
 	{prefix}mutex_lock({prefix}mutex_in_caller);
 
 	/***Serializing***/
-	{prefix}message_start(0);
+	{prefix}message_start({messagesize});
 	{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
 	result = {prefix}message_commit();
@@ -577,6 +577,7 @@ class Function:
     functionname = self.name,
     parameterdeclaration = self.getParameterDeclaration(),
     prefix = prefix,
+    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()),
     )
         return """
 {prefix}RESULT {functionname}({parameterdeclaration}){{
@@ -586,7 +587,7 @@ class Function:
 		{prefix}mutex_lock({prefix}mutex_in_caller);
 
 		/***Serializing***/
-		{prefix}message_start(0);
+		{prefix}message_start({messagesize});
 		{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
 		if ({prefix}message_commit() == {prefix}SUCCESS){{ /* successfully sent request */
@@ -629,6 +630,7 @@ class Function:
     parameterdeclaration = self.getParameterDeclaration(),
     outputParameterDeserialization = "".join(p["parameter"].unstringify(prefix + "buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput()),
     prefix = prefix,
+    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()),
     )
     def getDeclaration(self):
         return "{}RESULT {}({});".format(
@@ -666,7 +668,7 @@ class Function:
 		/***Call function***/
 			{functioncall}
 		/***send return value and output parameters***/
-			{prefix}message_start(0);
+			{prefix}message_start({messagesize});
 			{prefix}message_push_byte({ID_plus_1});
 			{outputParameterSerialization}
 			{prefix}message_commit();
@@ -680,6 +682,7 @@ class Function:
     outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput()),
     ID_plus_1 = self.ID * 2 + 1,
     prefix = prefix,
+    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput()),
     )
     def getAnswerSizeCase(self, buffer):
         if self.name in functionNoAnswerList:
