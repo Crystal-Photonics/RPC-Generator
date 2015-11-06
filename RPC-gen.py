@@ -560,6 +560,7 @@ class Function:
 	{prefix}mutex_lock({prefix}mutex_in_caller);
 
 	/***Serializing***/
+	{prefix}message_start(0);
 	{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
 	result = {prefix}message_commit();
@@ -585,6 +586,7 @@ class Function:
 		{prefix}mutex_lock({prefix}mutex_in_caller);
 
 		/***Serializing***/
+		{prefix}message_start(0);
 		{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
 		if ({prefix}message_commit() == {prefix}SUCCESS){{ /* successfully sent request */
@@ -664,6 +666,7 @@ class Function:
 		/***Call function***/
 			{functioncall}
 		/***send return value and output parameters***/
+			{prefix}message_start(0);
 			{prefix}message_push_byte({ID_plus_1});
 			{outputParameterSerialization}
 			{prefix}message_commit();
