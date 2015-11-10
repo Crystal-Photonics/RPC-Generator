@@ -1152,6 +1152,7 @@ def getGenericHeader(version):
 
 def getSizeFunction(functions, clientHeader, parser_to_network_path, parser_to_server_header_path):
     return """#include "{network_include}"
+#include "{parser_include}"	
 #include "{parser_to_server_header_path}"
 
 /* Receives a pointer to a (partly) received message and it's size.
@@ -1181,6 +1182,7 @@ def getSizeFunction(functions, clientHeader, parser_to_network_path, parser_to_s
     cases = "".join(f.getRequestSizeCase("current") for f in functions),
     prefix = prefix,
     network_include = join(parser_to_network_path, prefix + "network.h"),
+	parser_include = join(parser_to_network_path, prefix + "parser.h"),
     parser_to_server_header_path = parser_to_server_header_path,
     )
 
