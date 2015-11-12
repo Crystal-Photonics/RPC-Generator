@@ -1175,7 +1175,8 @@ def getSizeFunction(functions, clientHeader, parser_to_network_path, parser_to_s
 			returnvalue.result = {prefix}COMMAND_UNKNOWN;
 			break;
 	}}
-	returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
+	if (returnvalue.result != {prefix}COMMAND_UNKNOWN)
+		returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
 	return returnvalue;
 }}
 """.format(
@@ -1255,7 +1256,8 @@ def getAnswerSizeChecker(functions):
 			returnvalue.result = {prefix}COMMAND_UNKNOWN;
 			return returnvalue;
 	}}
-	returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
+	if (returnvalue.result != {prefix}COMMAND_UNKNOWN)
+		returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
 	return returnvalue;
 }}
 """.format(
