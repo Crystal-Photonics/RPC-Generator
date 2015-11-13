@@ -1150,7 +1150,7 @@ def getGenericHeader(version):
 /* The optional original return value is returned through the first parameter */
 """.format(version, getNonstandardTypedefs())
 
-def getSizeFunction(functions, clientHeader, parser_to_network_path, parser_to_server_header_path):
+def getSizeFunction(functions, clientHeader, parser_to_generic_path, parser_to_server_header_path):
     return """#include "{network_include}"
 #include "{parser_include}"	
 #include "{parser_to_server_header_path}"
@@ -1172,18 +1172,18 @@ def getSizeFunction(functions, clientHeader, parser_to_network_path, parser_to_s
 
 	switch (*current){{ /* switch by message ID */{cases}
 		default:
+			returnvalue.size = 0;
 			returnvalue.result = {prefix}COMMAND_UNKNOWN;
-			break;
+			return returnvalue;
 	}}
-	if (returnvalue.result != {prefix}COMMAND_UNKNOWN)
-		returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
+	returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
 	return returnvalue;
 }}
 """.format(
     cases = "".join(f.getRequestSizeCase("current") for f in functions),
     prefix = prefix,
-    network_include = join(parser_to_network_path, prefix + "network.h"),
-	parser_include = join(parser_to_network_path, prefix + "parser.h"),
+    network_include = join(parser_to_generic_path, prefix + "network.h"),
+    parser_include = join(parser_to_generic_path, prefix + "parser.h"),
     parser_to_server_header_path = parser_to_server_header_path,
     )
 
