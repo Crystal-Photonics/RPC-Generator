@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <cstdio>
+#include <cstring>
 
 void fillString(char *buffer, size_t length, std::string text){
 	if (length == 0)
@@ -19,21 +20,21 @@ void fillString(char *buffer, size_t length, std::string text){
 extern "C" {
 #endif /* __cplusplus */
 	void setCPS(uint16_t cps){
-		std::cout << __FUNCTION__ " cps = " << cps << '\n';
+        std::cout << __FUNCTION__ << " cps = " << cps << '\n';
 	}
 
 	int32_t simpleTest(int32_t i){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ << "\n";
 		return i * i;
 	}
 
 	void arrayTest(char text_inout[42]){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ << "\n";
 		std::reverse(text_inout, text_inout + strnlen(text_inout, 42));
 	}
 
 	void multiArrayTest(char text_inout[2][3][4]){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ << "\n";
 	}
 
 	void arrayInputTest(char text_in[42]){
@@ -42,11 +43,11 @@ extern "C" {
 
 	void arrayOutputTest(char text_out[42]){
 		std::cout << __FUNCTION__ << "\n";
-		fillString(text_out, 42, "hi from function "  __FUNCTION__);
+        fillString(text_out, 42, ("hi from function "  + std::string(__FUNCTION__)).c_str());
 	}
 
 	void arrayInputOutputTest(char text_inout[42]){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__<< "\n";
 		const auto length = strnlen(text_inout, 42);
 		auto addText = std::string(text_inout, text_inout + length);
 		std::reverse(std::begin(addText), std::end(addText));
@@ -54,25 +55,25 @@ extern "C" {
 	}
 
 	void emptyTest(){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 	}
 
 #pragma RPC noanswer noAnswerTest
 	void noAnswerTest(){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 	}
 
 	void multipleParametersTest(uint8_t p1, uint16_t p2, uint32_t p3){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 	}
 
 #pragma RPC ignore ignoreTest
 	void ignoreTest(){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 	}
 
 	void structTest(struct TestStruct s_out[1]){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 		s_out->n1 = 1;
 		s_out->n2 = 2;
 		s_out->n3 = 3;
@@ -92,20 +93,20 @@ extern "C" {
 	}
 
 	void enumTest1(enum TestEnum testEnum){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 	}
 
 	enum TestEnum enumTest2(){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 		return TEb;
 	}
 
 	void typedefEnumTest1(TypedefTestEnum testEnum){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 	}
 
 	TypedefTestEnum typedefEnumTest2(){
-		std::cout << __FUNCTION__ "\n";
+        std::cout << __FUNCTION__ <<"\n";
 		return TTEd;
 	}
 

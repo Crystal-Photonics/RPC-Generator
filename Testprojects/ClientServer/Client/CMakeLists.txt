@@ -20,4 +20,6 @@ source_group(RPC FILES ${RPC_HEADERS})
 source_group(network FILES ${NETWORK_HEADERS})
 source_group(network FILES ${NETWORK_SOURCES})
 
+find_package(Threads REQUIRED)
 add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${RPC_HEADERS} ${RPC_SOURCES} ${NETWORK_HEADERS} ${NETWORK_SOURCES})
+target_link_libraries(${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})

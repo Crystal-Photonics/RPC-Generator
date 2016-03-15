@@ -181,3 +181,48 @@ SocketImplementation::~SocketImplementation(){
 //TODO: add linux implementaion
 
 #endif //WIN32
+
+#include "socket.h"
+#include <fstream>
+#include <string>
+
+Socket Socket::getConnection(const char *ip, unsigned short port)
+{
+}
+
+
+std::unique_ptr<Socket> Socket::waitForConnection(const char *ip, unsigned short port, const std::chrono::milliseconds &timeout)
+{
+
+}
+
+
+void Socket::sendData(const void *buffer, size_t size)
+{
+    static int count = 0;
+    std::ofstream f("RPC_OUTPUT" + std::to_string(count++) + ".bin");
+    f.write(static_cast<const char*>(buffer), size);
+}
+
+
+void Socket::receiveData(void *buffer, size_t size, const std::chrono::milliseconds &timeout)
+{
+
+}
+
+
+
+
+Socket::Socket(Socket &&other)
+{
+
+}
+
+Socket::~Socket()
+{
+
+}
+
+Socket::Socket(void *f)
+    :implementation(f)
+{}

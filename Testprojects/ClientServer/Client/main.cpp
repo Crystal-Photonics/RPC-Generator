@@ -9,8 +9,9 @@
 #include "../../SharedSocketCode/socket.h"
 #include "network.h"
 #include <string>
+#include <cstring>
 
-std::atomic<bool> quitParser = false;
+std::atomic<bool> quitParser(false);
 
 void parser(){
 	try{
@@ -96,6 +97,7 @@ void logic(){
 
 			int32_t retval;
 			auto success = simpleTest(&retval, 5);
+            /*
 			assert(retval == 3);
 			TEST_FUNCTION(simpleTest, &retval, 17);
 			char testArray[42] = "Hello World!";
@@ -128,6 +130,8 @@ void logic(){
 			}
 			std::cout << '\n';
 			//std::this_thread::sleep_for(std::chrono::seconds(1));
+            */
+            break;
 		}
 	}
 	catch (const std::runtime_error &error){
@@ -138,14 +142,14 @@ void logic(){
 
 int main()
 {
-	try{
-		RPC_UART_Parser_init();
-		auto logicthread = std::thread(logic);
-		parser();
-		logicthread.join();
-		RPC_UART_Parser_exit();
-	}
-	catch (const std::runtime_error &error){
-		std::cout << error.what() << '\n';
-	}
+    try{
+        RPC_UART_Parser_init();
+        auto logicthread = std::thread(logic);
+        parser();
+        logicthread.join();
+        RPC_UART_Parser_exit();
+    }
+    catch (const std::runtime_error &error){
+        std::cout << error.what() << '\n';
+    }
 }
