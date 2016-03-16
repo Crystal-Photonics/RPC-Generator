@@ -95,14 +95,16 @@ void logic(){
 		for (; socket && (start + testduration > std::chrono::system_clock::now());){
 			std::cout << "Testing RPC functions:\n";
 
+#if 0
 			int32_t retval;
-			auto success = simpleTest(&retval, 5);
-            /*
-			assert(retval == 3);
-			TEST_FUNCTION(simpleTest, &retval, 17);
+            //auto success = simpleTest(&retval, 5);
+
+            //assert(retval == 3);
+            //TEST_FUNCTION(simpleTest, &retval, 17);
 			char testArray[42] = "Hello World!";
+            arrayTest(testArray);
 			TEST_FUNCTION(arrayTest, testArray);
-			assert(std::string(testArray, testArray + strnlen(testArray, 42)) == "!dlroW olleH");
+            //assert(std::string(testArray, testArray + strnlen(testArray, 42)) == "!dlroW olleH");
 			char multiArray[2][3][4] = {};
 			TEST_FUNCTION(multiArrayTest, multiArray);
 			TEST_FUNCTION(arrayInputTest, testArray);
@@ -118,8 +120,27 @@ void logic(){
 			TEST_FUNCTION(multipleParametersTest, p1, p2, p3);
 			TestStruct s = {};
 			TEST_FUNCTION(structTest, &s);
-			TypedefTestStruct ts = {};
-			ts.n = 42;
+#endif
+#if 1
+            enum TestEnum testEnum;
+            testEnum = TEb;
+            enumTest1(testEnum);
+#endif
+
+
+#if 0
+            TypedefTestStruct ts = {};
+            ts.n = 42;
+
+            std::string s = std::string("Hallo3456789012345674890123456789012345678");
+            std::cout << s.length();
+            assert(s.length()==42);
+            memcpy(ts.ia,s.data(),s.length());
+            for(int x = 0;x<2;x++){
+                for(int y = 0;y<3;y++){
+                    ts.iaa[0][x][y] = (y<<4)|x;
+                }
+            }
 			TEST_FUNCTION(typedefStructTest, &ts);
 			for (auto &l1 : ts.iaa){
 				for (auto &l2 : l1){
@@ -130,8 +151,8 @@ void logic(){
 			}
 			std::cout << '\n';
 			//std::this_thread::sleep_for(std::chrono::seconds(1));
-            */
             break;
+#endif
 		}
 	}
 	catch (const std::runtime_error &error){
