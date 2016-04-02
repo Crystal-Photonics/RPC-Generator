@@ -98,6 +98,11 @@ def getFilePaths():
     assert isfile(serverconfig["configuration"]["SOURCEHEADER"]), "Error in \"" + serverconfigpath + "\": Required file \"" + serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
     retval["ServerHeader"] = abspath(serverconfig["configuration"]["SOURCEHEADER"])
 
+    if "INCLUDE_INTO_TYPES" in clientconfig["configuration"]:
+        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig["configuration"]["INCLUDE_INTO_TYPES"]
+    else:
+        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = ""
+
     if "DOCDIR" in serverconfig["configuration"]:
         makedirs(serverconfig["configuration"]['DOCDIR'], exist_ok=True)
         retval["SERVER_" + "DOCDIR"] = abspath(serverconfig["configuration"]["DOCDIR"])
@@ -1611,11 +1616,14 @@ div.content table.declarations{
 }
 """
 def getRpcTypesHeader():
+    files = getFilePaths()
     return """{doNotModifyHeader}
 #ifndef {prefix}TYPES_H
 #define {prefix}TYPES_H
 
 #include <stddef.h>
+
+{extrainclude}
 
 {rpc_enum}
 typedef struct {{
@@ -1637,6 +1645,7 @@ typedef enum {{
     doNotModifyHeader = doNotModifyHeader,
     rpc_enum = get_rpc_enum(),
     prefix = prefix,
+    extrainclude = files["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"]
     )
 
 def getRequestParserHeader():
