@@ -98,6 +98,11 @@ def getFilePaths():
     assert isfile(serverconfig["configuration"]["SOURCEHEADER"]), "Error in \"" + serverconfigpath + "\": Required file \"" + serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
     retval["ServerHeader"] = abspath(serverconfig["configuration"]["SOURCEHEADER"])
 
+    if "INCLUDE_INTO_TYPES" in clientconfig["configuration"]:
+        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig["configuration"]["INCLUDE_INTO_TYPES"]
+    else:
+        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = ""
+
     if "DOCDIR" in serverconfig["configuration"]:
         makedirs(serverconfig["configuration"]['DOCDIR'], exist_ok=True)
         retval["SERVER_" + "DOCDIR"] = abspath(serverconfig["configuration"]["DOCDIR"])
@@ -1163,7 +1168,7 @@ def getSizeFunction(functions, clientHeader, parser_to_generic_path, parser_to_s
 {prefix}SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){{
 	const unsigned char *current = (const unsigned char *)buffer;
 	{prefix}SIZE_RESULT returnvalue;
-
+	returnvalue.result = RPC_TRANSMISSION_COMMAND_INCOMPLETE;
 	if (size_bytes == 0){{
 		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
 		returnvalue.size = 1;
@@ -1245,6 +1250,7 @@ def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
 {prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
 	{prefix}SIZE_RESULT returnvalue;
+	returnvalue.result = RPC_TRANSMISSION_COMMAND_INCOMPLETE;
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
 		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
@@ -1611,11 +1617,14 @@ div.content table.declarations{
 }
 """
 def getRpcTypesHeader():
+    files = getFilePaths()
     return """{doNotModifyHeader}
 #ifndef {prefix}TYPES_H
 #define {prefix}TYPES_H
 
 #include <stddef.h>
+
+{extrainclude}
 
 {rpc_enum}
 typedef struct {{
@@ -1637,6 +1646,7 @@ typedef enum {{
     doNotModifyHeader = doNotModifyHeader,
     rpc_enum = get_rpc_enum(),
     prefix = prefix,
+    extrainclude = files["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"]
     )
 
 def getRequestParserHeader():
