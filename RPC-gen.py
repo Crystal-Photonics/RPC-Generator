@@ -583,8 +583,8 @@ class Function:
             return """
 RPC_RESULT {functionname}({parameterdeclaration}){{
 	RPC_RESULT result;
-	{prefix}mutex_lock({prefix}mutex_caller);
-	{prefix}mutex_lock({prefix}mutex_in_caller);
+	{prefix}mutex_lock(RPC_mutex_caller);
+	{prefix}mutex_lock(RPC_mutex_in_caller);
 
 	/***Serializing***/
 	{prefix}message_start({messagesize});
@@ -594,8 +594,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 
 	/* This function has been set to receive no answer */
 
-	{prefix}mutex_unlock({prefix}mutex_in_caller);
-	{prefix}mutex_unlock({prefix}mutex_caller);
+	{prefix}mutex_unlock(RPC_mutex_in_caller);
+	{prefix}mutex_unlock(RPC_mutex_caller);
 	return result;
 }}
 """.format(
@@ -608,42 +608,42 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     )
         return """
 RPC_RESULT {functionname}({parameterdeclaration}){{
-	{prefix}mutex_lock({prefix}mutex_caller);
+	{prefix}mutex_lock(RPC_mutex_caller);
 	
 	for (;;){{
-		{prefix}mutex_lock({prefix}mutex_in_caller);
+		{prefix}mutex_lock(RPC_mutex_in_caller);
 
 		/***Serializing***/
 		{prefix}message_start({messagesize});
 		{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
 		if ({prefix}message_commit() == RPC_SUCCESS){{ /* successfully sent request */
-			if ({prefix}mutex_lock_timeout({prefix}mutex_answer)){{ /* Wait for answer to arrive */
+			if ({prefix}mutex_lock_timeout(RPC_mutex_answer)){{ /* Wait for answer to arrive */
 				if (*{prefix}buffer++ != {answerID}){{ /* We got an incorrect answer */
-					{prefix}mutex_unlock({prefix}mutex_in_caller);
-					{prefix}mutex_lock({prefix}mutex_parsing_complete);
-					{prefix}mutex_unlock({prefix}mutex_parsing_complete);
-					{prefix}mutex_unlock({prefix}mutex_answer);
+					{prefix}mutex_unlock(RPC_mutex_in_caller);
+					{prefix}mutex_lock(RPC_mutex_parsing_complete);
+					{prefix}mutex_unlock(RPC_mutex_parsing_complete);
+					{prefix}mutex_unlock(RPC_mutex_answer);
 					continue; /* Try if next answer is correct */
 				}}
 				/***Deserializing***/
 {outputParameterDeserialization}
-				{prefix}mutex_unlock({prefix}mutex_in_caller);
-				{prefix}mutex_lock({prefix}mutex_parsing_complete);
-				{prefix}mutex_unlock({prefix}mutex_parsing_complete);
-				{prefix}mutex_unlock({prefix}mutex_answer);
-				{prefix}mutex_unlock({prefix}mutex_caller);
+				{prefix}mutex_unlock(RPC_mutex_in_caller);
+				{prefix}mutex_lock(RPC_mutex_parsing_complete);
+				{prefix}mutex_unlock(RPC_mutex_parsing_complete);
+				{prefix}mutex_unlock(RPC_mutex_answer);
+				{prefix}mutex_unlock(RPC_mutex_caller);
 				return RPC_SUCCESS;
 			}}
 			else {{ /* We failed to get an answer due to timeout */
-				{prefix}mutex_unlock({prefix}mutex_in_caller);
-				{prefix}mutex_unlock({prefix}mutex_caller);
+				{prefix}mutex_unlock(RPC_mutex_in_caller);
+				{prefix}mutex_unlock(RPC_mutex_caller);
 				return RPC_FAILURE;
 			}}
 		}}
 		else {{ /* Sending request failed */
-			{prefix}mutex_unlock({prefix}mutex_in_caller);
-			{prefix}mutex_unlock({prefix}mutex_caller);
+			{prefix}mutex_unlock(RPC_mutex_in_caller);
+			{prefix}mutex_unlock(RPC_mutex_caller);
 			return RPC_FAILURE;
 		}}
 	}}
@@ -1215,12 +1215,12 @@ void {prefix}parse_answer(const void *buffer, size_t size_bytes){{
 	assert({prefix}get_answer_length(buffer, size_bytes).result == RPC_SUCCESS);
 	assert({prefix}get_answer_length(buffer, size_bytes).size <= size_bytes);
 
-	{prefix}mutex_unlock({prefix}mutex_answer);
-	{prefix}mutex_lock({prefix}mutex_in_caller);
-	{prefix}mutex_unlock({prefix}mutex_parsing_complete);
-	{prefix}mutex_lock({prefix}mutex_answer);
-	{prefix}mutex_lock({prefix}mutex_parsing_complete);
-	{prefix}mutex_unlock({prefix}mutex_in_caller);
+	{prefix}mutex_unlock(RPC_mutex_answer);
+	{prefix}mutex_lock(RPC_mutex_in_caller);
+	{prefix}mutex_unlock(RPC_mutex_parsing_complete);
+	{prefix}mutex_lock(RPC_mutex_answer);
+	{prefix}mutex_lock(RPC_mutex_parsing_complete);
+	{prefix}mutex_unlock(RPC_mutex_in_caller);
 }}
 """.format(prefix = prefix)
 
@@ -1230,8 +1230,8 @@ void {prefix}Parser_init(){{
 	if ({prefix}initialized)
 		return;
 	{prefix}initialized = 1;
-	{prefix}mutex_lock({prefix}mutex_parsing_complete);
-	{prefix}mutex_lock({prefix}mutex_answer);
+	{prefix}mutex_lock(RPC_mutex_parsing_complete);
+	{prefix}mutex_lock(RPC_mutex_answer);
 }}
 """.format(prefix = prefix)
 
@@ -1241,8 +1241,8 @@ void {prefix}Parser_exit(){{
 	if (!{prefix}initialized)
 		return;
 	{prefix}initialized = 0;
-	{prefix}mutex_unlock({prefix}mutex_parsing_complete);
-	{prefix}mutex_unlock({prefix}mutex_answer);
+	{prefix}mutex_unlock(RPC_mutex_parsing_complete);
+	{prefix}mutex_unlock(RPC_mutex_answer);
 }}
 """.format(prefix = prefix)
 
@@ -1427,19 +1427,19 @@ RPC_RESULT {prefix}message_commit(void);
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    You need to define 4 mutexes to implement the {prefix}mutex_* functions below.
-   See RPC_types.h for a definition of {prefix}mutex_id.
+   See RPC_types.h for a definition of RPC_mutex_id.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
    
 void {prefix}mutex_init(void);
 /* Initializes all rpc mutexes. */
 
-void {prefix}mutex_lock({prefix}mutex_id mutex_id);
+void {prefix}mutex_lock(RPC_mutex_id mutex_id);
 /* Locks the mutex. If it is already locked it yields until it can lock the mutex. */
 
-void {prefix}mutex_unlock({prefix}mutex_id mutex_id);
+void {prefix}mutex_unlock(RPC_mutex_id mutex_id);
 /* Unlocks the mutex. The mutex is locked when the function is called. */
 
-char {prefix}mutex_lock_timeout({prefix}mutex_id mutex_id);
+char {prefix}mutex_lock_timeout(RPC_mutex_id mutex_id);
 /* Tries to lock a mutex. Returns 1 if the mutex was locked and 0 if a timeout
    occured. The timeout length should be the time you want to wait for an answer
    before giving up. If the time is infinite a lost answer will get the calling
@@ -1619,8 +1619,8 @@ div.content table.declarations{
 def getRpcTypesHeader():
     files = getFilePaths()
     return """{doNotModifyHeader}
-#ifndef {prefix}TYPES_H
-#define {prefix}TYPES_H
+#ifndef RPC_TYPES_H
+#define RPC_TYPES_H
 
 #include <stddef.h>
 
@@ -1633,15 +1633,15 @@ typedef struct {{
 }} RPC_SIZE_RESULT;
 
 typedef enum {{
-    {prefix}mutex_parsing_complete,
-    {prefix}mutex_caller,
-    {prefix}mutex_in_caller,
-    {prefix}mutex_answer,
-    {prefix}MUTEX_COUNT
-}} {prefix}mutex_id;
-#define {prefix}number_of_mutexes 4
+    RPC_mutex_parsing_complete,
+    RPC_mutex_caller,
+    RPC_mutex_in_caller,
+    RPC_mutex_answer,
+    RPC_MUTEX_COUNT
+}} RPC_mutex_id;
+#define RPC_number_of_mutexes 4
 
-#endif /* {prefix}TYPES_H */
+#endif /* RPC_TYPES_H */
 """.format(
     doNotModifyHeader = doNotModifyHeader,
     rpc_enum = get_rpc_enum(),
