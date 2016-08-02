@@ -581,8 +581,8 @@ class Function:
     def getDefinition(self):
         if self.name in functionNoAnswerList:
             return """
-{prefix}RESULT {functionname}({parameterdeclaration}){{
-	{prefix}RESULT result;
+RPC_RESULT {functionname}({parameterdeclaration}){{
+	RPC_RESULT result;
 	{prefix}mutex_lock({prefix}mutex_caller);
 	{prefix}mutex_lock({prefix}mutex_in_caller);
 
@@ -607,7 +607,7 @@ class Function:
     messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()) + 1,
     )
         return """
-{prefix}RESULT {functionname}({parameterdeclaration}){{
+RPC_RESULT {functionname}({parameterdeclaration}){{
 	{prefix}mutex_lock({prefix}mutex_caller);
 	
 	for (;;){{
@@ -617,7 +617,7 @@ class Function:
 		{prefix}message_start({messagesize});
 		{prefix}message_push_byte({requestID}); /* save ID */
 {inputParameterSerializationCode}
-		if ({prefix}message_commit() == {prefix}SUCCESS){{ /* successfully sent request */
+		if ({prefix}message_commit() == RPC_SUCCESS){{ /* successfully sent request */
 			if ({prefix}mutex_lock_timeout({prefix}mutex_answer)){{ /* Wait for answer to arrive */
 				if (*{prefix}buffer++ != {answerID}){{ /* We got an incorrect answer */
 					{prefix}mutex_unlock({prefix}mutex_in_caller);
@@ -633,18 +633,18 @@ class Function:
 				{prefix}mutex_unlock({prefix}mutex_parsing_complete);
 				{prefix}mutex_unlock({prefix}mutex_answer);
 				{prefix}mutex_unlock({prefix}mutex_caller);
-				return {prefix}SUCCESS;
+				return RPC_SUCCESS;
 			}}
 			else {{ /* We failed to get an answer due to timeout */
 				{prefix}mutex_unlock({prefix}mutex_in_caller);
 				{prefix}mutex_unlock({prefix}mutex_caller);
-				return {prefix}FAILURE;
+				return RPC_FAILURE;
 			}}
 		}}
 		else {{ /* Sending request failed */
 			{prefix}mutex_unlock({prefix}mutex_in_caller);
 			{prefix}mutex_unlock({prefix}mutex_caller);
-			return {prefix}FAILURE;
+			return RPC_FAILURE;
 		}}
 	}}
 	/* assert_dead_code; */
@@ -726,7 +726,7 @@ class Function:
 				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
 			else{{
 				returnvalue.size = 3;
-				returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+				returnvalue.result = RPC_COMMAND_INCOMPLETE;
 			}}""".format(buffer = buffer, prefix = prefix)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
@@ -755,7 +755,7 @@ class Function:
 				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
 			else{{
 				returnvalue.size = 3;
-				returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+				returnvalue.result = RPC_COMMAND_INCOMPLETE;
 			}}""".format(buffer = buffer, prefix = prefix)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
@@ -1161,16 +1161,16 @@ def getSizeFunction(functions, clientHeader, parser_to_generic_path, parser_to_s
 #include "{parser_to_server_header_path}"
 
 /* Receives a pointer to a (partly) received message and it's size.
-   Returns a result and a size. If size equals {prefix}SUCCESS then size is the
-   size that the message is supposed to have. If result equals {prefix}COMMAND_INCOMPLETE
+   Returns a result and a size. If size equals RPC_SUCCESS then size is the
+   size that the message is supposed to have. If result equals RPC_COMMAND_INCOMPLETE
    then more bytes are required to determine the size of the message. In this case
    size is the expected number of bytes required to determine the correct size.*/
-{prefix}SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){{
+RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){{
 	const unsigned char *current = (const unsigned char *)buffer;
-	{prefix}SIZE_RESULT returnvalue;
-	returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+	RPC_SIZE_RESULT returnvalue;
+	returnvalue.result = RPC_COMMAND_INCOMPLETE;
 	if (size_bytes == 0){{
-		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+		returnvalue.result = RPC_COMMAND_INCOMPLETE;
 		returnvalue.size = 1;
 		return returnvalue;
 	}}
@@ -1178,10 +1178,10 @@ def getSizeFunction(functions, clientHeader, parser_to_generic_path, parser_to_s
 	switch (*current){{ /* switch by message ID */{cases}
 		default:
 			returnvalue.size = 0;
-			returnvalue.result = {prefix}COMMAND_UNKNOWN;
+			returnvalue.result = RPC_COMMAND_UNKNOWN;
 			return returnvalue;
 	}}
-	returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
+	returnvalue.result = returnvalue.size > size_bytes ? RPC_COMMAND_INCOMPLETE : RPC_SUCCESS;
 	return returnvalue;
 }}
 """.format(
@@ -1212,7 +1212,7 @@ def getAnswerParser(functions):
 /* This function pushes the answers to the caller, doing all the necessary synchronization. */
 void {prefix}parse_answer(const void *buffer, size_t size_bytes){{
 	{prefix}buffer = (const unsigned char *)buffer;
-	assert({prefix}get_answer_length(buffer, size_bytes).result == {prefix}SUCCESS);
+	assert({prefix}get_answer_length(buffer, size_bytes).result == RPC_SUCCESS);
 	assert({prefix}get_answer_length(buffer, size_bytes).size <= size_bytes);
 
 	{prefix}mutex_unlock({prefix}mutex_answer);
@@ -1248,22 +1248,22 @@ void {prefix}Parser_exit(){{
 
 def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
-{prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
-	{prefix}SIZE_RESULT returnvalue;
-	returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
+	RPC_SIZE_RESULT returnvalue;
+	returnvalue.result = RPC_COMMAND_INCOMPLETE;
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
-		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
+		returnvalue.result = RPC_COMMAND_INCOMPLETE;
 		returnvalue.size = 1;
 		return returnvalue;
 	}}
 	switch (*current){{
 {answercases}		default:
-			returnvalue.result = {prefix}COMMAND_UNKNOWN;
+			returnvalue.result = RPC_COMMAND_UNKNOWN;
 			return returnvalue;
 	}}
-	if (returnvalue.result != {prefix}COMMAND_UNKNOWN)
-		returnvalue.result = returnvalue.size > size_bytes ? {prefix}COMMAND_INCOMPLETE : {prefix}SUCCESS;
+	if (returnvalue.result != RPC_COMMAND_UNKNOWN)
+		returnvalue.result = returnvalue.size > size_bytes ? RPC_COMMAND_INCOMPLETE : RPC_SUCCESS;
 	return returnvalue;
 }}
 """.format(
@@ -1342,11 +1342,11 @@ externC_outro = """
 
 def get_rpc_enum():
     return """typedef enum{{
-        {prefix}SUCCESS,
-        {prefix}FAILURE,
-        {prefix}COMMAND_UNKNOWN,
-        {prefix}COMMAND_INCOMPLETE
-    }} {prefix}RESULT;
+        RPC_SUCCESS,
+        RPC_FAILURE,
+        RPC_COMMAND_UNKNOWN,
+        RPC_COMMAND_INCOMPLETE
+    }} RPC_RESULT;
     """.format(
         prefix = prefix,
         )
@@ -1417,13 +1417,13 @@ void {prefix}message_push_byte(unsigned char byte);
    out of buffer space you can send multiple partial messages as long as the
    other side puts them back together. */
 
-{prefix}RESULT {prefix}message_commit(void);
+RPC_RESULT {prefix}message_commit(void);
 /* This function is called when a complete message has been pushed using
    {prefix}message_push_byte. Now is a good time to send the buffer over the network,
    even if the buffer is not full yet. You may also want to free the buffer that
    you may have allocated in the {prefix}message_start function.
-   {prefix}message_commit should return {prefix}SUCCESS if the buffer has been successfully
-   sent and {prefix}FAILURE otherwise. */
+   {prefix}message_commit should return RPC_SUCCESS if the buffer has been successfully
+   sent and RPC_FAILURE otherwise. */
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    You need to define 4 mutexes to implement the {prefix}mutex_* functions below.
@@ -1458,13 +1458,13 @@ void {prefix}Parser_exit(void);
 /* Frees various states required for the RPC. Must be called after any
    other {prefix}* function */
 
-{prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size);
+RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size);
 /* Returns the (expected) length of the beginning of a (partial) message.
-   If returnvalue.result equals {prefix}SUCCESS then returnvalue.size equals the
+   If returnvalue.result equals RPC_SUCCESS then returnvalue.size equals the
    expected size in bytes.
-   If returnvalue.result equals {prefix}COMMAND_UNKNOWN then the buffer does not point
+   If returnvalue.result equals RPC_COMMAND_UNKNOWN then the buffer does not point
    to the beginning of a recognized message and returnvalue.size has no meaning.
-   If returnvalue.result equals {prefix}COMMAND_INCOMPLETE then returnvalue.size equals
+   If returnvalue.result equals RPC_COMMAND_INCOMPLETE then returnvalue.size equals
    the minimum number of bytes required to figure out the length of the message. */
 
 void {prefix}parse_answer(const void *buffer, size_t size);
@@ -1628,9 +1628,9 @@ def getRpcTypesHeader():
 
 {rpc_enum}
 typedef struct {{
-	{prefix}RESULT result;
+	RPC_RESULT result;
 	size_t size;
-}} {prefix}SIZE_RESULT;
+}} RPC_SIZE_RESULT;
 
 typedef enum {{
     {prefix}mutex_parsing_complete,
@@ -1655,11 +1655,11 @@ def getRequestParserHeader():
 
 {externC_intro}
 /* Receives a pointer to a (partly) received message and it's size.
-   Returns a result and a size. If size equals {prefix}SUCCESS then size is the
-   size that the message is supposed to have. If result equals {prefix}COMMAND_INCOMPLETE
+   Returns a result and a size. If size equals RPC_SUCCESS then size is the
+   size that the message is supposed to have. If result equals RPC_COMMAND_INCOMPLETE
    then more bytes are required to determine the size of the message. In this case
    size is the expected number of bytes required to determine the correct size.*/
-{prefix}SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes);
+RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes);
 
 /* This function parses RPC requests, calls the original function and sends an
    answer. */
