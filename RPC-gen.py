@@ -1402,7 +1402,7 @@ def getNetworkHeader():
 #ifndef {prefix}NETWORK_H
 #define {prefix}NETWORK_H
 
-#include "{prefix}types.h"
+#include "RPC_types.h"
 
 {externC_intro}
 void {prefix}message_start(size_t size);
@@ -1427,7 +1427,7 @@ RPC_RESULT {prefix}message_commit(void);
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    You need to define 4 mutexes to implement the {prefix}mutex_* functions below.
-   See {prefix}types.h for a definition of {prefix}mutex_id.
+   See RPC_types.h for a definition of {prefix}mutex_id.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
    
 void {prefix}mutex_init(void);
@@ -1651,7 +1651,7 @@ typedef enum {{
 
 def getRequestParserHeader():
     return """{doNotModifyHeader}
-#include "{prefix}types.h"
+#include "RPC_types.h"
 
 {externC_intro}
 /* Receives a pointer to a (partly) received message and it's size.
