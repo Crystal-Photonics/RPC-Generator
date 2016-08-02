@@ -1168,7 +1168,7 @@ def getSizeFunction(functions, clientHeader, parser_to_generic_path, parser_to_s
 {prefix}SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){{
 	const unsigned char *current = (const unsigned char *)buffer;
 	{prefix}SIZE_RESULT returnvalue;
-	returnvalue.result = RPC_TRANSMISSION_COMMAND_INCOMPLETE;
+	returnvalue.result = {prefix}COMMAND_INCOMPLETE;
 	if (size_bytes == 0){{
 		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
 		returnvalue.size = 1;
@@ -1250,7 +1250,7 @@ def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
 {prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
 	{prefix}SIZE_RESULT returnvalue;
-	returnvalue.result = RPC_TRANSMISSION_COMMAND_INCOMPLETE;
+	returnvalue.result = {prefix}COMMAND_INCOMPLETE;
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
 		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
