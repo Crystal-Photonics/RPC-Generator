@@ -660,8 +660,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
     messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()) + 1,
     )
     def getDeclaration(self):
-        return "{}RESULT {}({});".format(
-            prefix,
+        return "RPC_RESULT {}({});".format(
+            #prefix,
             self.name,
             self.getParameterDeclaration(),
             )
@@ -1707,7 +1707,7 @@ static char {prefix}initialized;
     xml._setroot(root)
 
     dir_name_content = []
-    dir_name_content.append(("CLIENT_SPCINCDIR", files["ServerHeaderName"] + ".h", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderName"] + '_H', getTypeDeclarations(), join(relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SPCINCDIR"]), prefix + "types.h"))))
+    dir_name_content.append(("CLIENT_SPCINCDIR", files["ServerHeaderName"] + ".h", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderName"] + '_H', getTypeDeclarations(), join(relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SPCINCDIR"]), "RPC_types.h"))))
     #dir_name_content.append(("CLIENT_GENINCDIR", "types.h", getRpcTypesHeader()))
     dir_name_content.append(("CLIENT_GENINCDIR", "network.h", getNetworkHeader()))
     clientcode = "".join((
