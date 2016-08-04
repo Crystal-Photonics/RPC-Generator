@@ -1198,6 +1198,7 @@ def getRequestParser(functions):
 /* This function parses RPC requests, calls the original function and sends an
    answer. */
 void {prefix}parse_request(const void *buffer, size_t size_bytes){{
+	(void)size_bytes;
 	const unsigned char *{buffername} = (const unsigned char *)buffer;
 	switch (*current++){{ /* switch (request ID) */ {cases}
 	}}
