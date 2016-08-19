@@ -1243,6 +1243,14 @@ def setStructTypes(structs):
             signature, memberList, currentFile, structs[s]["line_number"])
         datatypeDeclarations.append(datatypes[signature].getTypeDeclaration())
 
+def getHash():
+    return """/* This hash is generated from the Python script that generated this file,
+   the configs passed to it and the source header file specified within the
+   server config. You can use it to verify that the client and the server
+   use the same protocol. */
+#define {prefix}HASH "{hashstring}"
+#define {prefix}HASH_SIZE 16""".format(prefix = prefix, hashstring = hashstring)
+
 
 def getStructParameter(parameter):
     basetype = getDatatype(
@@ -1475,6 +1483,12 @@ def getSizeFunction(functions, clientHeader,
 #include "{parser_include}"
 #include "{parser_to_server_header_path}"
 
+#include <string.h>
+
+void {prefix}get_hash(unsigned char hash[16]){{
+	memcpy(hash, {prefix}HASH, 16);
+}}
+
 /* Receives a pointer to a (partly) received message and it's size.
    Returns a result and a size. If size equals {prefix}SUCCESS then size is the
    size that the message is supposed to have. If result equals {prefix}COMMAND_INCOMPLETE
@@ -1569,7 +1583,7 @@ void {prefix}Parser_exit(){{
 def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
 {prefix}SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
-	{prefix}SIZE_RESULT returnvalue;
+	{prefix}SIZE_RESULT returnvalue = {{{prefix}SUCCESS, 0}};
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
 		returnvalue.result = {prefix}COMMAND_INCOMPLETE;
@@ -1593,7 +1607,7 @@ def getAnswerSizeChecker(functions):
 
 def getHashFunction():
     return Function(0, getDatatype("void"), prefix + "get_hash", [{'parameter': ArrayDatatype(
-        "64", getDatatype("unsigned char"), "hash", Out=True), 'parametername': "hash"}])
+        "16", getDatatype("unsigned char"), "hash", Out=True), 'parametername': "hash"}])
 
 
 def generateCode(file, xml, parser_to_network_path,
@@ -1703,12 +1717,7 @@ def getRPC_serviceHeader(
 #include <inttypes.h>
 #include "{specific_header_to_types_path}"
 
-/* This hash is generated from the Python script that generated this file,
-   the configs passed to it and the source header file specified within the
-   server config. You can use it to identify if both client and server use
-   the same protocol. */
-#define {prefix}HASH "{hashstring}"
-#define {prefix}HASH_SIZE (sizeof {prefix}HASH)
+{hash}
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    These are the payload functions made available by the RPC generator.
@@ -1721,7 +1730,7 @@ def getRPC_serviceHeader(
             typedeclarations=typedeclarations,
             headers=headers,
             specific_header_to_types_path=specific_header_to_types_path,
-            hashstring=hashstring,
+            hash=getHash(),
         ),)
 
 
@@ -1989,6 +1998,8 @@ def getRequestParserHeader():
     return """{doNotModifyHeader}
 #include "{prefix}types.h"
 
+{hash}
+
 {externC_intro}
 /* Receives a pointer to a (partly) received message and it's size.
    Returns a result and a size. If size equals {prefix}SUCCESS then size is the
@@ -2006,6 +2017,7 @@ void {prefix}parse_request(const void *buffer, size_t size_bytes);
         externC_intro=externC_intro,
         externC_outro=externC_outro,
         prefix=prefix,
+        hash=getHash(),
     )
 
 try:
