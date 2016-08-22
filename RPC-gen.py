@@ -50,13 +50,13 @@ def calculateHash(filenames):
     for fn in filenames:
         with open(fn, "r") as f:
             hash.update(f.read().encode("UTF-8"))
-    d = hash.hexdigest()
+    rh = d = hash.hexdigest()
     result = ""
     while len(d) > 0:
         result += "\\x"
         result += d[0:2]
         d = d[2:]
-    return result
+    return result, rh
 
 
 def getFilePaths():
@@ -144,8 +144,9 @@ def getFilePaths():
         retval["SERVER_" + d] = abspath(serverconfig["configuration"][d])
 
     global hashstring
+    global rawhash
     from sys import argv
-    hashstring = calculateHash(
+    hashstring, rawhash = calculateHash(
         (argv[0],
          clientconfigpath,
          serverconfigpath,
@@ -1032,7 +1033,7 @@ class Function:
         pos = BytePositionCounter(start=1)
         outputvariables = "</tr><tr>".join(tableformat.format(
             length=p["parameter"].getSize(),
-            varname=p["parametername"],
+            varname=p["parametername"] if self.ID != 0 else p["parametername"] + ' = 0x' + rawhash,
             bytes=pos.getBytes(p["parameter"].getSize()),
             type=stripOneDimensionalArray(p["parameter"].declaration("")),
         )
@@ -2147,6 +2148,7 @@ static char {prefix}initialized;
                     ".xml"),
                 files["CLIENT_CONFIG_PATH"]))
         xml.write(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
+        xml.write(join(files["CLIENT_DOCDIR"], rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
 
     dir_name_content = []
     dir_name_content.append(
@@ -2208,6 +2210,7 @@ static char {prefix}initialized;
                     ".xml"),
                 files["SERVER_CONFIG_PATH"]))
         xml.write(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
+        xml.write(join(files["SERVER_DOCDIR"], rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
 except SystemError:
     import traceback
     traceback.print_exc(1)
