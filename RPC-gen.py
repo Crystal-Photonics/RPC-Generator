@@ -1523,6 +1523,7 @@ RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){
 	return returnvalue;
 }}
 """.format(
+        hash = getHash(),
         cases="".join(f.getRequestSizeCase("current") for f in functions),
         prefix=prefix,
         network_include=join(parser_to_generic_path, prefix + "network.h"),
