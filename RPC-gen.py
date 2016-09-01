@@ -1491,6 +1491,8 @@ def getSizeFunction(functions, clientHeader,
 
 #include <string.h>
 
+{hash}
+
 /* auto-generated implementation */
 void {prefix}get_hash_impl(unsigned char hash[16]){{
 	memcpy(hash, {prefix}HASH, 16);
@@ -1711,9 +1713,12 @@ def getRPC_serviceHeader(
     return """{doNotModify}
 {includeguardintro}
 {externC_intro}
+{hash}
+
 {rpc_declarations}{externC_outro}
 {includeguardoutro}
 """.format(
+        hash=getHash(),
         doNotModify=doNotModifyHeader,
         externC_intro=externC_intro,
         externC_outro=externC_outro,
@@ -2007,8 +2012,6 @@ def getRequestParserHeader():
     return """{doNotModifyHeader}
 #include "RPC_types.h"
 
-{hash}
-
 {externC_intro}
 /* Receives a pointer to a (partly) received message and it's size.
    Returns a result and a size. If size equals RPC_SUCCESS then size is the
@@ -2026,7 +2029,6 @@ void {prefix}parse_request(const void *buffer, size_t size_bytes);
         externC_intro=externC_intro,
         externC_outro=externC_outro,
         prefix=prefix,
-        hash=getHash(),
     )
 
 try:
