@@ -40,7 +40,13 @@ where [functionname] is the name of a function in the header and [number] an eve
                 function, ID = p.split(" ")[2:4]
                 ID = int(ID)
                 assert ID >= 2, "Custom command IDs must be at least 2"
+                assert ID < 256, "Custom command IDs must be less than 256"
                 assert ID % 2 == 0, "Custom command IDs must be even"
+                assert int(ID / 2) not in functionPredefinedIDs.values(), "ID {ID} cannot be used for both functions '{f2}' and '{f1}'".format(
+                    ID = ID,
+                    f1 = function,
+                    f2 = list(functionPredefinedIDs.keys())[list(functionPredefinedIDs.values()).index(int(ID / 2))],
+                    )
                 functionPredefinedIDs[function] = int(ID / 2)
             else:
                 assert False, "Unknown command {} in {}".format(
@@ -63,6 +69,10 @@ def calculateHash(filenames):
 
 
 def getFilePaths():
+    try:
+        return getFilePaths.retval
+    except AttributeError:
+        pass
     # get paths for various files that need to be created. all created files start with prefix
     # parse input
     from argparse import ArgumentParser
@@ -165,14 +175,8 @@ def getFilePaths():
     ast = CppHeaderParser.CppHeader(
         abspath(serverconfig["configuration"]["SOURCEHEADER"]))
     evaluatePragmas(ast.pragmas)
-    return retval
-"""
-fp = getFilePaths()
-for k in fp:
-    print(k, ": ", fp[k])
-exit()
-"""
-
+    getFilePaths.retval = retval
+    return getFilePaths.retval
 
 def getDatatype(signature, file="???", line="???"):
     # print(10*"+")
@@ -1646,7 +1650,7 @@ def generateCode(file, xml, parser_to_network_path,
         except FileNotFoundError:
             print('Warning: #include file "{}" not found, skipping'.format(path))
     currentFile = file
-    evaluatePragmas(ast.pragmas)
+    #evaluatePragmas(ast.pragmas)
     # print(ast.enums)
     # print(ast.typedefs_order)
     # print(ast.namespaces)
@@ -2050,6 +2054,9 @@ try:
                 files["SERVER_GENINCDIR"], files["SERVER_SRCDIR"]), relpath(
                 files["ServerHeader"], files["SERVER_SRCDIR"]))
 
+    for function in functionPredefinedIDs:
+        print("Warning: #pragma ID {function} {ID} was ignored since no function named {function} was declared".format(function = function, ID = functionPredefinedIDs[function] * 2))
+    
     requestParserImplementation = doNotModifyHeader + \
         '\n' + requestParserImplementation
 
