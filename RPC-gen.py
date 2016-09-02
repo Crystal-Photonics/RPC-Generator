@@ -1,8 +1,3 @@
-# Source Header ->
-# - RPC header
-# - RPC implementation
-# - requestParser implementation
-
 import sys
 import CppHeaderParser
 from copy import deepcopy
