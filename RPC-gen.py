@@ -120,6 +120,8 @@ def getFilePaths():
         serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
     retval["ServerHeader"] = abspath(
         serverconfig["configuration"]["SOURCEHEADER"])
+    global currentFile
+    currentFile = retval["ServerHeader"]
 
     if "INCLUDE_INTO_TYPES" in clientconfig["configuration"]:
         retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig["configuration"]["INCLUDE_INTO_TYPES"]
