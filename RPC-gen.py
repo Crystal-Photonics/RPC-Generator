@@ -13,6 +13,7 @@ currentFile = ""
 prefix = "RPC_"  # change prefix inside the header with #pragma RPC prefix EXAMPLE_
 projectname = "RPC" # change projectname in the server header with #pragma RPC project My Project Name
 current_function_id = 1 # change command_id_start in the server header with #pragma RPC command_id_start 42
+version_number = 0 # change version_number in the server header with #pragma RPC version_number 42
 
 functionIgnoreList = []
 functionNoAnswerList = []
@@ -60,6 +61,11 @@ where [functionname] is the name of a function in the header and [number] an eve
                 assert startid < 256, "command_id_start must be less that 256"
                 global current_function_id
                 current_function_id = int(startid / 2)
+            elif command == "version_number":
+                global version_number
+                target = int(target)
+                assert target < 65536 and target >= 0, "version_number must be positive and less than 65536"
+                version_number = target
             else:
                 assert False, "Unknown preprocessor command #pragma RPC {} in {}".format(
                     command, currentFile)
