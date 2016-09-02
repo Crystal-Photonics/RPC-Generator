@@ -11,7 +11,8 @@ datatypeDeclarations = []
 defines = {}
 currentFile = ""
 prefix = "RPC_"  # change prefix inside the header with #pragma RPC prefix EXAMPLE_
-projectname = "RPC" # change prefix in the server header with #pragma RPC project My Project Name
+projectname = "RPC" # change projectname in the server header with #pragma RPC project My Project Name
+current_function_id = 1 # change command_id_start in the server header with #pragma RPC command_id_start 42
 
 functionIgnoreList = []
 functionNoAnswerList = []
@@ -53,6 +54,12 @@ where [functionname] is the name of a function in the header and [number] an eve
             elif command == "projectname":
                 global projectname
                 projectname = p.split(" ", 2)[2]
+            elif command == "command_id_start":
+                startid = int(target)
+                assert startid % 2 == 0, "command_id_start must be even"
+                assert startid < 256, "command_id_start must be less that 256"
+                global current_function_id
+                current_function_id = int(startid / 2)
             else:
                 assert False, "Unknown preprocessor command #pragma RPC {} in {}".format(
                     command, currentFile)
@@ -1407,7 +1414,7 @@ def getFunction(function):
         try:
             getFunction.functionID += 1
         except AttributeError:
-            getFunction.functionID = 1
+            getFunction.functionID = current_function_id
         while getFunction.functionID in functionPredefinedIDs.values():
             getFunction.functionID += 1
         assert getFunction.functionID < 127, "Too many functions, require changes to allow bigger function ID variable"
@@ -2249,7 +2256,7 @@ static char {prefix}initialized;
         except:
             pass
         xml.write(join(files["SERVER_DOCDIR"], projectname, prefix, rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
-except SystemError:
+except:
     import traceback
-    traceback.print_exc(1)
+    traceback.print_exc(0)
     exit(-1)
