@@ -13,7 +13,7 @@ prefix = "RPC_"  # change prefix inside the header with #pragma RPC prefix XMPL_
 
 functionIgnoreList = []
 functionNoAnswerList = []
-
+functionPredefinedIDs = {}
 
 def evaluatePragmas(pragmas):
     for p in pragmas:
@@ -34,6 +34,14 @@ def evaluatePragmas(pragmas):
             elif command == "prefix":
                 global prefix
                 prefix = target
+            elif command == "ID":
+                assert len(p.split(" ")) == 4, "Custom command pragma must have the form '#pragma RPC ID [functionname] [number]' \
+where [functionname] is the name of a function in the header and [number] an even unique number greater than 1"
+                function, ID = p.split(" ")[2:4]
+                ID = int(ID)
+                assert ID >= 2, "Custom command IDs must be at least 2"
+                assert ID % 2 == 0, "Custom command IDs must be even"
+                functionPredefinedIDs[function] = int(ID / 2)
             else:
                 assert False, "Unknown command {} in {}".format(
                     command, currentFile)
@@ -1384,16 +1392,18 @@ def getFunctionParameterList(parameters):
 
 def getFunction(function):
     functionList = []
-    try:
-        getFunction.functionID += 1
-        assert getFunction.functionID < 255, "Too many functions, require changes to allow bigger function ID variable"
-    except AttributeError:
-        getFunction.functionID = 1
-    # for attribute in function:
-        #print(attribute + ":", function[attribute])
-    ID = getFunction.functionID
-    returntype = getFunctionReturnType(function)
     name = function["name"]
+    ID = functionPredefinedIDs.pop(name, None)
+    if ID == None:
+        try:
+            getFunction.functionID += 1
+        except AttributeError:
+            getFunction.functionID = 1
+        while getFunction.functionID in functionPredefinedIDs.values():
+            getFunction.functionID += 1
+        assert getFunction.functionID < 127, "Too many functions, require changes to allow bigger function ID variable"
+        ID = getFunction.functionID
+    returntype = getFunctionReturnType(function)
     parameterlist = getFunctionParameterList(function["parameters"])
     return Function(ID, returntype, name, parameterlist)
     # for k in function.keys():
