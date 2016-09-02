@@ -2077,6 +2077,12 @@ try:
     files = getFilePaths()
     from os.path import join, split, relpath
 
+    root.set("prefix", prefix)
+    root.set("projectname", projectname)
+    root.set("version_number", str(version_number))
+    root.set("command_id_start", str(current_function_id))
+    root.set("hash", rawhash)
+
     rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = \
         generateCode(
             files["ServerHeader"], root, relpath(
