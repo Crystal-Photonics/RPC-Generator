@@ -11,13 +11,19 @@ datatypeDeclarations = []
 defines = {}
 currentFile = ""
 prefix = "RPC_"  # change prefix inside the header with #pragma RPC prefix EXAMPLE_
-projectname = "RPC" # change projectname in the server header with #pragma RPC project My Project Name
-current_function_id = 1 # change command_id_start in the server header with #pragma RPC command_id_start 42
-version_number = 0 # change version_number in the server header with #pragma RPC version_number 42
+# change projectname in the server header with #pragma RPC project My
+# Project Name
+projectname = "RPC"
+# change command_id_start in the server header with #pragma RPC
+# command_id_start 42
+current_function_id = 1
+# change version_number in the server header with #pragma RPC version_number 42
+version_number = 0
 
 functionIgnoreList = []
 functionNoAnswerList = []
 functionPredefinedIDs = {}
+
 
 def evaluatePragmas(pragmas):
     for p in pragmas:
@@ -47,10 +53,11 @@ where [functionname] is the name of a function in the header and [number] an eve
                 assert ID < 256, "Custom command IDs must be less than 256"
                 assert ID % 2 == 0, "Custom command IDs must be even"
                 assert int(ID / 2) not in functionPredefinedIDs.values(), "ID {ID} cannot be used for both functions '{f2}' and '{f1}'".format(
-                    ID = ID,
-                    f1 = function,
-                    f2 = list(functionPredefinedIDs.keys())[list(functionPredefinedIDs.values()).index(int(ID / 2))],
-                    )
+                    ID=ID,
+                    f1=function,
+                    f2=list(functionPredefinedIDs.keys())[
+                        list(functionPredefinedIDs.values()).index(int(ID / 2))],
+                )
                 functionPredefinedIDs[function] = int(ID / 2)
             elif command == "projectname":
                 global projectname
@@ -160,7 +167,8 @@ def getFilePaths():
     currentFile = retval["ServerHeader"]
 
     if "INCLUDE_INTO_TYPES" in clientconfig["configuration"]:
-        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig["configuration"]["INCLUDE_INTO_TYPES"]
+        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig[
+            "configuration"]["INCLUDE_INTO_TYPES"]
     else:
         retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = ""
 
@@ -195,6 +203,7 @@ def getFilePaths():
     evaluatePragmas(ast.pragmas)
     getFilePaths.retval = retval
     return getFilePaths.retval
+
 
 def getDatatype(signature, file="???", line="???"):
     # print(10*"+")
@@ -895,7 +904,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 
     def getDeclaration(self):
         return "RPC_RESULT {}({});".format(
-            #prefix,
+            # prefix,
             self.name,
             self.getParameterDeclaration(),
         )
@@ -1065,7 +1074,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         pos = BytePositionCounter(start=1)
         outputvariables = "</tr><tr>".join(tableformat.format(
             length=p["parameter"].getSize(),
-            varname=p["parametername"] if self.ID != 0 else p["parametername"] + ' = 0x' + rawhash,
+            varname=p["parametername"] if self.ID != 0 else p[
+                "parametername"] + ' = 0x' + rawhash,
             bytes=pos.getBytes(p["parameter"].getSize()),
             type=stripOneDimensionalArray(p["parameter"].declaration("")),
         )
@@ -1276,13 +1286,14 @@ def setStructTypes(structs):
             signature, memberList, currentFile, structs[s]["line_number"])
         datatypeDeclarations.append(datatypes[signature].getTypeDeclaration())
 
+
 def getHash():
     return """/* This hash is generated from the Python script that generated this file,
    the configs passed to it and the source header file specified within the
    server config. You can use it to verify that the client and the server
    use the same protocol. */
 #define {prefix}HASH "{hashstring}"
-#define {prefix}HASH_SIZE 16""".format(prefix = prefix, hashstring = hashstring)
+#define {prefix}HASH_SIZE 16""".format(prefix=prefix, hashstring=hashstring)
 
 
 def getStructParameter(parameter):
@@ -1416,7 +1427,7 @@ def getFunction(function):
     functionList = []
     name = function["name"]
     ID = functionPredefinedIDs.pop(name, None)
-    if ID == None:
+    if ID is None:
         try:
             getFunction.functionID += 1
         except AttributeError:
@@ -1552,7 +1563,7 @@ RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){
 	return returnvalue;
 }}
 """.format(
-        hash = getHash(),
+        hash=getHash(),
         cases="".join(f.getRequestSizeCase("current") for f in functions),
         prefix=prefix,
         network_include=join(parser_to_generic_path, prefix + "network.h"),
@@ -1668,7 +1679,7 @@ def generateCode(file, xml, parser_to_network_path,
         except FileNotFoundError:
             print('Warning: #include file "{}" not found, skipping'.format(path))
     currentFile = file
-    #evaluatePragmas(ast.pragmas)
+    # evaluatePragmas(ast.pragmas)
     # print(ast.enums)
     # print(ast.typedefs_order)
     # print(ast.namespaces)
@@ -2034,7 +2045,7 @@ typedef enum {{
         doNotModifyHeader=doNotModifyHeader,
         rpc_enum=get_rpc_enum(),
         prefix=prefix,
-        extrainclude = files["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"]
+        extrainclude=files["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"]
     )
 
 
@@ -2073,8 +2084,12 @@ try:
                 files["ServerHeader"], files["SERVER_SRCDIR"]))
 
     for function in functionPredefinedIDs:
-        print("Warning: #pragma ID {function} {ID} was ignored since no function named {function} was declared".format(function = function, ID = functionPredefinedIDs[function] * 2))
-    
+        print(
+            "Warning: #pragma ID {function} {ID} was ignored since no function named {function} was declared".format(
+                function=function,
+                ID=functionPredefinedIDs[function] *
+                2))
+
     requestParserImplementation = doNotModifyHeader + \
         '\n' + requestParserImplementation
 
@@ -2190,12 +2205,26 @@ static char {prefix}initialized;
                     files["ServerHeaderName"] +
                     ".xml"),
                 files["CLIENT_CONFIG_PATH"]))
-        xml.write(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
+        xml.write(
+            join(
+                files["CLIENT_DOCDIR"],
+                prefix +
+                files["ServerHeaderName"] +
+                ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
         try:
             makedirs(join(files["CLIENT_DOCDIR"], projectname, prefix))
         except:
             pass
-        xml.write(join(files["CLIENT_DOCDIR"], projectname, prefix, rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
+        xml.write(
+            join(
+                files["CLIENT_DOCDIR"],
+                projectname,
+                prefix,
+                rawhash + ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
 
     dir_name_content = []
     dir_name_content.append(
@@ -2256,12 +2285,26 @@ static char {prefix}initialized;
                     files["ServerHeaderName"] +
                     ".xml"),
                 files["SERVER_CONFIG_PATH"]))
-        xml.write(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
+        xml.write(
+            join(
+                files["SERVER_DOCDIR"],
+                prefix +
+                files["ServerHeaderName"] +
+                ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
         try:
             makedirs(join(files["SERVER_DOCDIR"], projectname, prefix))
         except:
             pass
-        xml.write(join(files["SERVER_DOCDIR"], projectname, prefix, rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
+        xml.write(
+            join(
+                files["SERVER_DOCDIR"],
+                projectname,
+                prefix,
+                rawhash + ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
 except:
     import traceback
     traceback.print_exc(0)
