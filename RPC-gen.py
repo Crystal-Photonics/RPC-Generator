@@ -4,12 +4,14 @@ from copy import deepcopy
 #from enum import Enum
 from itertools import chain
 import xml.etree.ElementTree as ET
+from os import makedirs
 
 datatypes = {}
 datatypeDeclarations = []
 defines = {}
 currentFile = ""
-prefix = "RPC_"  # change prefix inside the header with #pragma RPC prefix XMPL_
+prefix = "RPC_"  # change prefix inside the header with #pragma RPC prefix EXAMPLE_
+projectname = "RPC" # change prefix in the server header with #pragma RPC project My Project Name
 
 functionIgnoreList = []
 functionNoAnswerList = []
@@ -48,8 +50,11 @@ where [functionname] is the name of a function in the header and [number] an eve
                     f2 = list(functionPredefinedIDs.keys())[list(functionPredefinedIDs.values()).index(int(ID / 2))],
                     )
                 functionPredefinedIDs[function] = int(ID / 2)
+            elif command == "projectname":
+                global projectname
+                projectname = p.split(" ", 2)[2]
             else:
-                assert False, "Unknown command {} in {}".format(
+                assert False, "Unknown preprocessor command #pragma RPC {} in {}".format(
                     command, currentFile)
 
 
@@ -2173,7 +2178,11 @@ static char {prefix}initialized;
                     ".xml"),
                 files["CLIENT_CONFIG_PATH"]))
         xml.write(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
-        xml.write(join(files["CLIENT_DOCDIR"], rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
+        try:
+            makedirs(join(files["CLIENT_DOCDIR"], projectname, prefix))
+        except:
+            pass
+        xml.write(join(files["CLIENT_DOCDIR"], projectname, prefix, rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
 
     dir_name_content = []
     dir_name_content.append(
@@ -2235,7 +2244,11 @@ static char {prefix}initialized;
                     ".xml"),
                 files["SERVER_CONFIG_PATH"]))
         xml.write(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
-        xml.write(join(files["SERVER_DOCDIR"], rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
+        try:
+            makedirs(join(files["SERVER_DOCDIR"], projectname, prefix))
+        except:
+            pass
+        xml.write(join(files["SERVER_DOCDIR"], projectname, prefix, rawhash + ".xml"), encoding="UTF-8", xml_declaration = True)
 except SystemError:
     import traceback
     traceback.print_exc(1)
