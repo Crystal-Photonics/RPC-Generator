@@ -1,10 +1,7 @@
-import sys
-import CppHeaderParser
-from copy import deepcopy
-#from enum import Enum
-from itertools import chain
 import xml.etree.ElementTree as ET
 from os import makedirs
+
+import CppHeaderParser
 
 datatypes = {}
 datatypeDeclarations = []
@@ -113,8 +110,8 @@ def getFilePaths():
     args = parser.parse_args()
 
     # check if input is valid
-    from os.path import isfile, isdir, abspath, join, split
-    from os import getcwd, chdir, makedirs
+    from os.path import isfile, abspath, split
+    from os import chdir, makedirs
     assert isfile(args.ClientConfig), "Error: Config file " + \
         args.ClientConfig + " does not exist."
     assert isfile(args.ServerConfig), "Error: Config file " + \
@@ -221,7 +218,6 @@ def getDatatype(signature, file="???", line="???"):
             line=line,
         )
         return datatypes[signature]
-    import sys
 
     print(">>>", datatypes)
 
@@ -1072,6 +1068,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         inputvariables = ID + "</tr><tr>" + \
             inputvariables if len(inputvariables) > 0 else ID
         pos = BytePositionCounter(start=1)
+
         def getPredefinedData(name):
             if name == "hash_out":
                 return '"' + rawhash + '"'
@@ -1301,7 +1298,9 @@ def getHash():
    server config. You can use it to verify that the client and the server
    use the same protocol. */
 #define {prefix}HASH "{hashstring}"
-#define {prefix}HASH_SIZE 16""".format(prefix=prefix, hashstring=hashstring)
+#define {prefix}HASH_SIZE 16
+#define {prefix}START_COMMAND_ID {start_command_id}
+#define {prefix}VERSION {version}""".format(prefix=prefix, hashstring=hashstring, start_command_id=start_command_id, version=version_number)
 
 
 def getStructParameter(parameter):
@@ -1542,8 +1541,10 @@ def getSizeFunction(functions, clientHeader,
 {hash}
 
 /* auto-generated implementation */
-void {prefix}get_hash_impl(unsigned char hash[16]){{
-	memcpy(hash, {prefix}HASH, 16);
+void {prefix}get_hash_impl(unsigned char hash_out[16], unsigned char start_command_id_out[1], uint16_t version_out[1]){{
+	memcpy(hash_out, {prefix}HASH, 16);
+	*start_command_id_out = {prefix}START_COMMAND_ID;
+	*version_out = {prefix}VERSION;
 }}
 
 /* Receives a pointer to a (partly) received message and it's size.
@@ -1666,8 +1667,16 @@ RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes)
 
 def getHashFunction():
     return Function(0, getDatatype("void"), prefix + "get_hash", [
-        {'parameter': ArrayDatatype("16", getDatatype("unsigned char"), "hash_out", Out=True), 'parametername': "hash_out"},
-        {'parameter': ArrayDatatype("1", getDatatype("unsigned char"), "start_command_id_out", Out=True), 'parametername': "start_command_id_out"},
+        {'parameter': ArrayDatatype("16",
+                                    getDatatype("unsigned char"),
+                                    "hash_out",
+                                    Out=True),
+            'parametername': "hash_out"},
+        {'parameter': ArrayDatatype("1",
+                                    getDatatype("unsigned char"),
+                                    "start_command_id_out",
+                                    Out=True),
+            'parametername': "start_command_id_out"},
         {'parameter': ArrayDatatype("1", getDatatype("uint16_t"), "version_out", Out=True), 'parametername': "version_out"}])
 
 
