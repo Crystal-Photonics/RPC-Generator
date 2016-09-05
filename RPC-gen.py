@@ -1072,10 +1072,18 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         inputvariables = ID + "</tr><tr>" + \
             inputvariables if len(inputvariables) > 0 else ID
         pos = BytePositionCounter(start=1)
+        def getPredefinedData(name):
+            if name == "hash_out":
+                return '"' + rawhash + '"'
+            elif name == "start_command_id_out":
+                return str(start_command_id)
+            elif name == "version_out":
+                return str(version_number)
+            assert False, "Internal error: invalid name for predefined variable value: " + name
         outputvariables = "</tr><tr>".join(tableformat.format(
             length=p["parameter"].getSize(),
             varname=p["parametername"] if self.ID != 0 else p[
-                "parametername"] + ' = "' + hashstring + '"',
+                "parametername"] + ' = ' + getPredefinedData(p["parametername"]),
             bytes=pos.getBytes(p["parameter"].getSize()),
             type=stripOneDimensionalArray(p["parameter"].declaration("")),
         )
@@ -1112,7 +1120,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         <p class="static">{name}</p>
         <table>
             <tr>
-                <th>Byte</th>
+                <th>Byte Index</th>
                 <th>Type</th>
                 <th>Length</th>
                 <th>Variable</th>
@@ -1657,8 +1665,10 @@ RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes)
 
 
 def getHashFunction():
-    return Function(0, getDatatype("void"), prefix + "get_hash", [{'parameter': ArrayDatatype(
-        "16", getDatatype("unsigned char"), "hash", Out=True), 'parametername': "hash"}])
+    return Function(0, getDatatype("void"), prefix + "get_hash", [
+        {'parameter': ArrayDatatype("16", getDatatype("unsigned char"), "hash_out", Out=True), 'parametername': "hash_out"},
+        {'parameter': ArrayDatatype("1", getDatatype("unsigned char"), "start_command_id_out", Out=True), 'parametername': "start_command_id_out"},
+        {'parameter': ArrayDatatype("1", getDatatype("uint16_t"), "version_out", Out=True), 'parametername': "version_out"}])
 
 
 def generateCode(file, xml, parser_to_network_path,
