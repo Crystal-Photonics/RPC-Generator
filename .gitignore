@@ -230,3 +230,20 @@ FakesAssemblies/
 
 # Visual Studio 6 workspace options file
 *.opt
+cmake_install.cmake
+CMakeCache.txt
+ZERO_CHECK.vcxproj
+ZERO_CHECK.vcxproj.filters
+.vs
+CMakeFiles
+Debug
+Win32
+ALL_BUILD.vcxproj
+ALL_BUILD.vcxproj.filters
+ClientServer.sdf
+ClientServer.sln
+ClientServer.v12.suo
+ClientServer.VC.db
+RPC
+/Testprojects/AliceBob/Project/AliceBob.VC.db
+/Testprojects/AliceBob/Project/AliceBob.sln

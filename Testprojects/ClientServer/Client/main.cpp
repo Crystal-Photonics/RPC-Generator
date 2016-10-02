@@ -38,9 +38,9 @@ void parser(){
 						if (quitParser)
 							return;
 						switch (RPC_UART_get_answer_length(buffer.data(), buffer.size()).result){
-							case RPC_UART_COMMAND_INCOMPLETE:
+							case RPC_COMMAND_INCOMPLETE:
 								continue;
-							case RPC_UART_COMMAND_UNKNOWN:
+							case RPC_COMMAND_UNKNOWN:
 								//+quick hack for testing
 								if (buffer.size() == 1){
 									if (buffer[0] == 'q'){
@@ -56,7 +56,7 @@ void parser(){
 								std::cout << "dropping " << buffer.size() << " bytes of data\n";
 								buffer.clear();
 								continue;
-							case RPC_UART_SUCCESS:
+							case RPC_SUCCESS:
 								break;
 							default:
 								throw std::runtime_error("unknown result from RPC_get_answer_length: " + std::to_string(RPC_UART_get_answer_length(buffer.data(), buffer.size()).result));
@@ -80,7 +80,7 @@ void parser(){
 }
 
 #define TEST_FUNCTION(FUNCTION, ...)\
-if (FUNCTION(__VA_ARGS__) == RPC_UART_SUCCESS)\
+if (FUNCTION(__VA_ARGS__) == RPC_SUCCESS)\
 std::cout << #FUNCTION << " succeeded\n";\
 else{std::cout << #FUNCTION << " failed\n"; __debugbreak(); assert(!#FUNCTION " failed\n");}
 

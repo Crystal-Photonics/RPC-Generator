@@ -1,23 +1,27 @@
-# Source Header ->
-# - RPC header
-# - RPC implementation
-# - requestParser implementation
-
-import sys
-import CppHeaderParser
-from copy import deepcopy
-#from enum import Enum
-from itertools import chain
 import xml.etree.ElementTree as ET
+from os import makedirs
+
+import CppHeaderParser
 
 datatypes = {}
 datatypeDeclarations = []
 defines = {}
 currentFile = ""
-prefix = "RPC_" #change prefix inside the header with #pragma RPC prefix XMPL_
+prefix = "RPC_"  # change prefix inside the header with #pragma RPC prefix EXAMPLE_
+# change projectname in the server header with #pragma RPC project My
+# Project Name
+projectname = "RPC"
+# change command_id_start in the server header with #pragma RPC
+# command_id_start 42
+start_command_id = 1
+# change version_number in the server header with #pragma RPC version_number 42
+version_number = 0
 
 functionIgnoreList = []
 functionNoAnswerList = []
+functionPredefinedIDs = {}
+
+
 def evaluatePragmas(pragmas):
     for p in pragmas:
         program, command = p.split(" ", 1)
@@ -25,17 +29,51 @@ def evaluatePragmas(pragmas):
             try:
                 command, target = command.split(" ", 1)
             except ValueError:
-                assert False, "Invalid command or parameter: {} in {}".format(command, currentFile)
+                assert False, "Invalid command or parameter: {} in {}".format(
+                    command, currentFile)
             if command == "ignore":
-                assert len(target.split(" ")) == 1, "Invalid function name: {} in {}".format(target, currentFile)
+                assert len(
+                    target.split(" ")) == 1, "Invalid function name: {} in {}".format(
+                    target, currentFile)
                 functionIgnoreList.append(target)
             elif command == "noanswer":
                 functionNoAnswerList.append(target)
             elif command == "prefix":
                 global prefix
                 prefix = target
+            elif command == "ID":
+                assert len(p.split(" ")) == 4, "Custom command pragma must have the form '#pragma RPC ID [functionname] [number]' \
+where [functionname] is the name of a function in the header and [number] an even unique number greater than 1"
+                function, ID = p.split(" ")[2:4]
+                ID = int(ID)
+                assert ID >= 2, "Custom command IDs must be at least 2"
+                assert ID < 256, "Custom command IDs must be less than 256"
+                assert ID % 2 == 0, "Custom command IDs must be even"
+                assert int(ID / 2) not in functionPredefinedIDs.values(), "ID {ID} cannot be used for both functions '{f2}' and '{f1}'".format(
+                    ID=ID,
+                    f1=function,
+                    f2=list(functionPredefinedIDs.keys())[
+                        list(functionPredefinedIDs.values()).index(int(ID / 2))],
+                )
+                functionPredefinedIDs[function] = int(ID / 2)
+            elif command == "projectname":
+                global projectname
+                projectname = p.split(" ", 2)[2]
+            elif command == "command_id_start":
+                startid = int(target)
+                assert startid % 2 == 0, "command_id_start must be even"
+                assert startid < 256, "command_id_start must be less that 256"
+                global start_command_id
+                start_command_id = int(startid / 2)
+            elif command == "version_number":
+                global version_number
+                target = int(target)
+                assert target < 65536 and target >= 0, "version_number must be positive and less than 65536"
+                version_number = target
             else:
-                assert False, "Unknown command {} in {}".format(command, currentFile)
+                assert False, "Unknown preprocessor command #pragma RPC {} in {}".format(
+                    command, currentFile)
+
 
 def calculateHash(filenames):
     from hashlib import md5
@@ -43,28 +81,41 @@ def calculateHash(filenames):
     for fn in filenames:
         with open(fn, "r") as f:
             hash.update(f.read().encode("UTF-8"))
-    d = hash.hexdigest()
+    rh = d = hash.hexdigest()
     result = ""
     while len(d) > 0:
         result += "\\x"
         result += d[0:2]
         d = d[2:]
-    return result
+    return result, rh
+
 
 def getFilePaths():
-    #get paths for various files that need to be created. all created files start with prefix
-    #parse input
+    try:
+        return getFilePaths.retval
+    except AttributeError:
+        pass
+    # get paths for various files that need to be created. all created files start with prefix
+    # parse input
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument("ClientConfig",  help = "Configuration file for the client", type = str)
-    parser.add_argument("ServerConfig",  help = "Configuration file for the server", type = str)
+    parser.add_argument(
+        "ClientConfig",
+        help="Configuration file for the client",
+        type=str)
+    parser.add_argument(
+        "ServerConfig",
+        help="Configuration file for the server",
+        type=str)
     args = parser.parse_args()
 
-    #check if input is valid
-    from os.path import isfile, isdir, abspath, join, split
-    from os import getcwd, chdir, makedirs
-    assert isfile(args.ClientConfig), "Error: Config file " + args.ClientConfig + " does not exist."
-    assert isfile(args.ServerConfig), "Error: Config file " + args.ServerConfig + " does not exist."
+    # check if input is valid
+    from os.path import isfile, abspath, split
+    from os import chdir, makedirs
+    assert isfile(args.ClientConfig), "Error: Config file " + \
+        args.ClientConfig + " does not exist."
+    assert isfile(args.ServerConfig), "Error: Config file " + \
+        args.ServerConfig + " does not exist."
     from configparser import ConfigParser
 
     clientconfigpath = abspath(args.ClientConfig)
@@ -72,7 +123,7 @@ def getFilePaths():
 
     retval = {}
 
-    #check client config for validity
+    # check client config for validity
     clientconfig = ConfigParser()
     clientconfig.read(args.ClientConfig)
 
@@ -80,80 +131,106 @@ def getFilePaths():
     retval["CLIENT_CONFIG_PATH"] = split(clientconfigpath)[0]
     if "DOCDIR" in clientconfig["configuration"]:
         makedirs(clientconfig["configuration"]['DOCDIR'], exist_ok=True)
-        retval["CLIENT_" + "DOCDIR"] = abspath(clientconfig["configuration"]["DOCDIR"])
+        retval[
+            "CLIENT_" +
+            "DOCDIR"] = abspath(
+            clientconfig["configuration"]["DOCDIR"])
     else:
-        print("Warning in \"" + clientconfigpath + "\": No DOCDIR specified. No documentation will be generated.")
+        print(
+            "Warning in \"" +
+            clientconfigpath +
+            "\": No DOCDIR specified. No documentation will be generated.")
     for d in ("SRCDIR", "GENINCDIR", "SPCINCDIR"):
-        assert d in clientconfig["configuration"], "Error in \"" + clientconfigpath + "\": No " + d + " specified. Abort."
+        assert d in clientconfig["configuration"], "Error in \"" + \
+            clientconfigpath + "\": No " + d + " specified. Abort."
         makedirs(clientconfig["configuration"][d], exist_ok=True)
         retval["CLIENT_" + d] = abspath(clientconfig["configuration"][d])
 
-    #check server config for validity
+    # check server config for validity
     serverconfig = ConfigParser()
     serverconfig.read(serverconfigpath)
     chdir(split(serverconfigpath)[0])
     retval["SERVER_CONFIG_PATH"] = split(serverconfigpath)[0]
-    retval["ServerHeaderName"] = split(abspath(serverconfig["configuration"]["SOURCEHEADER"]))[1][:-2]
-    assert "SOURCEHEADER" in serverconfig["configuration"], "Error in \"" + serverconfigpath + "\": No SOURCEHEADER specified. Abort."
-    assert isfile(serverconfig["configuration"]["SOURCEHEADER"]), "Error in \"" + serverconfigpath + "\": Required file \"" + serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
-    retval["ServerHeader"] = abspath(serverconfig["configuration"]["SOURCEHEADER"])
+    retval["ServerHeaderName"] = split(
+        abspath(serverconfig["configuration"]["SOURCEHEADER"]))[1][:-2]
+    assert "SOURCEHEADER" in serverconfig[
+        "configuration"], "Error in \"" + serverconfigpath + "\": No SOURCEHEADER specified. Abort."
+    assert isfile(serverconfig["configuration"]["SOURCEHEADER"]), "Error in \"" + serverconfigpath + \
+        "\": Required file \"" + \
+        serverconfig["configuration"]["SOURCEHEADER"] + "\" not found. Abort."
+    retval["ServerHeader"] = abspath(
+        serverconfig["configuration"]["SOURCEHEADER"])
+    global currentFile
+    currentFile = retval["ServerHeader"]
 
     if "INCLUDE_INTO_TYPES" in clientconfig["configuration"]:
-        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig["configuration"]["INCLUDE_INTO_TYPES"]
+        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig[
+            "configuration"]["INCLUDE_INTO_TYPES"]
     else:
         retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = ""
 
     if "DOCDIR" in serverconfig["configuration"]:
         makedirs(serverconfig["configuration"]['DOCDIR'], exist_ok=True)
-        retval["SERVER_" + "DOCDIR"] = abspath(serverconfig["configuration"]["DOCDIR"])
+        retval[
+            "SERVER_" +
+            "DOCDIR"] = abspath(
+            serverconfig["configuration"]["DOCDIR"])
     else:
-        print("Warning in \"" + serverconfigpath + "\": No DOCDIR specified. No documentation will be generated.")
+        print(
+            "Warning in \"" +
+            serverconfigpath +
+            "\": No DOCDIR specified. No documentation will be generated.")
     for d in ("SRCDIR", "GENINCDIR"):
-        assert d in serverconfig["configuration"], "Error in \"" + serverconfigpath + "\": No " + d + " specified. Abort."
+        assert d in serverconfig["configuration"], "Error in \"" + \
+            serverconfigpath + "\": No " + d + " specified. Abort."
         makedirs(serverconfig["configuration"][d], exist_ok=True)
         retval["SERVER_" + d] = abspath(serverconfig["configuration"][d])
 
     global hashstring
+    global rawhash
     from sys import argv
-    hashstring = calculateHash((argv[0], clientconfigpath, serverconfigpath, retval["ServerHeader"]))
+    hashstring, rawhash = calculateHash(
+        (argv[0],
+         clientconfigpath,
+         serverconfigpath,
+         retval["ServerHeader"]))
 
-    ast = CppHeaderParser.CppHeader(abspath(serverconfig["configuration"]["SOURCEHEADER"]))
+    ast = CppHeaderParser.CppHeader(
+        abspath(serverconfig["configuration"]["SOURCEHEADER"]))
     evaluatePragmas(ast.pragmas)
-    return retval
-"""
-fp = getFilePaths()
-for k in fp:
-    print(k, ": ", fp[k])
-exit()
-"""
+    getFilePaths.retval = retval
+    return getFilePaths.retval
 
-def getDatatype(signature, file = "???", line = "???"):
-    #print(10*"+")
-    #print(signature)
+
+def getDatatype(signature, file="???", line="???"):
+    # print(10*"+")
+    # print(signature)
     signatureList = signature.split(" ")
-    if len(signatureList) == 1: #basic type
-        try:
-            return datatypes[signature]
-        except KeyError:
-            try:
-                return datatypes[defines[signature]]
-            except KeyError:
-                assert "Size for type " + signature + " is unknown."
-    elif len(signatureList) == 2 and (signatureList[0] == "struct" or signatureList[0] == "enum"):
-        assert signature in datatypes, 'Unknown type "{signature}" in {file}:{line}'.format(
-            signature = signature,
-            file = file,
-            line = line,
-            )
+    if signature in datatypes:
         return datatypes[signature]
-    assert False, 'Unknown type "{signature}" in {file}:{line}'.format(
-        signature = signature,
-        file = file,
-        line = line,
+    if signature in defines and defines[signature] in datatypes:
+        return datatypes[defines[signature]]
+    if len(signatureList) == 2 and (signatureList[
+            0] == "struct" or signatureList[0] == "enum"):
+        assert signature in datatypes, 'Unknown type "{signature}" in {file}:{line}'.format(
+            signature=signature,
+            file=file,
+            line=line,
         )
+        return datatypes[signature]
+
+    print(">>>", datatypes)
+
+    assert False, 'THIS Unknown type "{signature}" in {file}:{line}'.format(
+        signature=signature,
+        file=file,
+        line=line,
+    )
+
 
 def getTypeDeclarations():
     return "\n".join(dd for dd in datatypeDeclarations)
+
 
 def isVoidDatatype(datatype):
     try:
@@ -161,45 +238,60 @@ def isVoidDatatype(datatype):
     except AttributeError:
         return False
 
-#Metatype describing what all datatypes must be capable of
+# Metatype describing what all datatypes must be capable of
+
+
 class Datatype:
     #__init__ #depending on type
+
     def setXml(self, xml):
-        #adds a description of the data type to the xml entry
+        # adds a description of the data type to the xml entry
         raise NotImplemented
+
     def declaration(self, identifier):
-        #returns the declaration for the datatype given its identifier such as "i" -> "int i" or "ia" -> "int ia[32][47]"
+        # returns the declaration for the datatype given its identifier such as
+        # "i" -> "int i" or "ia" -> "int ia[32][47]"
         raise NotImplemented
+
     def stringify(self, identifier, indention):
-        #identifier is the name of the identifier we want to stringify, can be an expression
-        #indention is the indention level of the code
-        #returns code that does the stringifying
+        # identifier is the name of the identifier we want to stringify, can be an expression
+        # indention is the indention level of the code
+        # returns code that does the stringifying
         raise NotImplemented
+
     def unstringify(self, source, identifier, indention):
-        #source is the name of a char * pointing to a buffer
-        #identifier is the name of the identifier we want to unstringify, can be an expression
-        #indention is the indention level of the code
-        #returns code that does the unstringifying
+        # source is the name of a char * pointing to a buffer
+        # identifier is the name of the identifier we want to unstringify, can be an expression
+        # indention is the indention level of the code
+        # returns code that does the unstringifying
         raise NotImplemented
+
     def isInput(self):
-        #returns True if this is an input parameter when passed to a function and False otherwise
-        #pointers and arrays may be pure output parameters, integers are always input parameters
-        #if pointers and arrays are input parameters depends on their identifier name
+        # returns True if this is an input parameter when passed to a function and False otherwise
+        # pointers and arrays may be pure output parameters, integers are always input parameters
+        # if pointers and arrays are input parameters depends on their
+        # identifier name
         raise NotImplemented
+
     def isOutput(self):
-        #returns True if this is an output parameter when passed to a function and False otherwise
-        #pointers and arrays can be output parameters, integers can never be output parameters
-        #if pointers and arrays are output parameters depends on their identifier name
+        # returns True if this is an output parameter when passed to a function and False otherwise
+        # pointers and arrays can be output parameters, integers can never be output parameters
+        # if pointers and arrays are output parameters depends on their
+        # identifier name
         raise NotImplemented
+
     def getSize(self):
-        #returns the number of bytes required to send this datatype over the network
-        #pointers return 0.
-        raise NotImplemented        
+        # returns the number of bytes required to send this datatype over the network
+        # pointers return 0.
+        raise NotImplemented
+
 
 class IntegralDatatype(Datatype):
+
     def __init__(self, signature, size_bytes):
         self.signature = signature
         self.size_bytes = size_bytes
+
     def setXml(self, xml):
         xml.set("bits", str(self.size_bytes * 8))
         xml.set("ctype", self.signature)
@@ -210,6 +302,7 @@ class IntegralDatatype(Datatype):
             typ = ET.SubElement(xml, "integer")
             signed = "False" if self.signature[0] == "u" else "True"
             typ.set("signed", signed)
+
     def getByte(number, identifier):
         assert number < 8, "Do not know how to portably deal with integers bigger than 64 bit"
         if number == 0:
@@ -220,6 +313,7 @@ class IntegralDatatype(Datatype):
             return "{0} >> {1}".format(identifier, 8 * number)
         elif number < 8:
             return "{0} >> {1}".format(identifier, 8 * number)
+
     def orByte(number, identifier, source):
         assert number < 8, "Do not know how to portably deal with integers bigger than 64 bit"
         if number == 0:
@@ -230,19 +324,32 @@ class IntegralDatatype(Datatype):
             return "{0} |= {1} << {2}L".format(identifier, source, 8 * number)
         elif number < 8:
             return "{0} |= {1} << {2}LL".format(identifier, source, 8 * number)
-    #use bitshift to prevent endianess problems
+    # use bitshift to prevent endianess problems
+
     def declaration(self, identifier):
         return self.signature + " " + identifier
+
     def stringify(self, identifier, indention):
         return """
 {indention}/* writing integral type {type} {identifier} of size {size} */
 {datapush}""".format(
-    indention = indention * '\t',
-    identifier = identifier,
-    type = self.signature,
-    size = self.size_bytes,
-    datapush = "".join(indention * '\t' + prefix + "message_push_byte((unsigned char)(" + IntegralDatatype.getByte(i, identifier) + "));\n" for i in range(self.size_bytes)), #5
-    )
+            indention=indention * '\t',
+            identifier=identifier,
+            type=self.signature,
+            size=self.size_bytes,
+            datapush="".join(
+                indention *
+                '\t' +
+                prefix +
+                "message_push_byte((unsigned char)(" +
+                IntegralDatatype.getByte(
+                    i,
+                    identifier) +
+                "));\n" for i in range(
+                    self.size_bytes)),
+            # 5
+        )
+
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
             return ""
@@ -250,29 +357,47 @@ class IntegralDatatype(Datatype):
 {indention}/* reading integral type {signature} {identifier} of size {size} */
 {indention}{identifier} = *{source}++;
 {deserialization}""".format(
-    indention = indention * '\t',
-    identifier = identifier,
-    source = source,
-    signature = self.signature,
-    size = self.size_bytes,
-    deserialization = "".join(indention * '\t' + IntegralDatatype.orByte(i, identifier, "(*" + source + "++)") + ";\n" for i in range(1, self.size_bytes)),
-    )
+            indention=indention * '\t',
+            identifier=identifier,
+            source=source,
+            signature=self.signature,
+            size=self.size_bytes,
+            deserialization="".join(
+                indention *
+                '\t' +
+                IntegralDatatype.orByte(
+                    i,
+                    identifier,
+                    "(*" +
+                    source +
+                    "++)") +
+                ";\n" for i in range(
+                    1,
+                    self.size_bytes)),
+        )
+
     def isInput(self):
         return True
+
     def isOutput(self):
         return False
+
     def getSize(self):
-        assert type(self.size_bytes) == int
+        assert isinstance(self.size_bytes, int)
         return self.size_bytes
-    
+
+
 class EnumDatatype(Datatype):
-    def __init__(self, signature, size_bytes, transfertype, values, name, typedef):
+
+    def __init__(self, signature, size_bytes,
+                 transfertype, values, name, typedef):
         self.signature = signature
         self.size_bytes = size_bytes
         self.transfertype = transfertype
         self.values = values
         self.typedef = typedef
         self.name = name
+
     def setXml(self, xml):
         xml.set("bits", str(self.size_bytes * 8))
         xml.set("ctype", self.declaration("")[:-1])
@@ -281,15 +406,23 @@ class EnumDatatype(Datatype):
             typ = ET.SubElement(xml, "enum")
             typ.set("name", v["name"])
             typ.set("value", str(v["value"]))
+
     def getTypeDeclaration(self):
-        declaration = ",\n\t".join("{name} = {value}".format(name = v["name"], value = v["value"]) for v in self.values)
+        declaration = ",\n\t".join(
+            "{name} = {value}".format(
+                name=v["name"],
+                value=v["value"]) for v in self.values)
         if self.typedef:
-            declaration = "typedef enum{{\n\t{declaration}\n}} {name};\n".format(declaration = declaration, name = self.name)
-        else: #no typedef
-            declaration = "enum {name}{{\n\t{declaration}\n}};\n".format(declaration = declaration, name = self.name)
+            declaration = "typedef enum{{\n\t{declaration}\n}} {name};\n".format(
+                declaration=declaration, name=self.name)
+        else:  # no typedef
+            declaration = "enum {name}{{\n\t{declaration}\n}};\n".format(
+                declaration=declaration, name=self.name)
         return declaration
+
     def declaration(self, identifier):
         return self.signature + " " + identifier
+
     def stringify(self, identifier, indention):
         if self.size_bytes == 0:
             return ""
@@ -299,13 +432,16 @@ class EnumDatatype(Datatype):
 {indention}\t{transfertype} temp = ({transfertype}){identifier};
 {serialization}
 {indention}}}""".format(
-    indention = indention * '\t',
-    identifier = identifier,
-    serialization = IntegralDatatype(self.transfertype, self.size_bytes).stringify("temp", indention + 1),
-    signature = self.signature,
-    size = self.size_bytes,
-    transfertype = self.transfertype,
-    )
+            indention=indention * '\t',
+            identifier=identifier,
+            serialization=IntegralDatatype(
+                self.transfertype, self.size_bytes).stringify(
+                "temp", indention + 1),
+            signature=self.signature,
+            size=self.size_bytes,
+            transfertype=self.transfertype,
+        )
+
     def unstringify(self, source, identifier, indention):
         if self.size_bytes == 0:
             return ""
@@ -316,29 +452,40 @@ class EnumDatatype(Datatype):
 {deserialization}
 {indention}\t{identifier} = temp;
 {indention}}}""".format(
-    indention = indention * '\t',
-    identifier = identifier,
-    source = source,
-    signature = self.signature,
-    size = self.size_bytes,
-    transfertype = self.transfertype,
-    deserialization = IntegralDatatype(self.transfertype, self.size_bytes).unstringify(source, "temp", indention + 1),
-    )
+            indention=indention * '\t',
+            identifier=identifier,
+            source=source,
+            signature=self.signature,
+            size=self.size_bytes,
+            transfertype=self.transfertype,
+            deserialization=IntegralDatatype(
+                self.transfertype, self.size_bytes).unstringify(
+                source, "temp", indention + 1),
+        )
+
     def isInput(self):
         return True
+
     def isOutput(self):
         return False
+
     def getSize(self):
-        assert type(self.size_bytes) == int
+        assert isinstance(self.size_bytes, int)
         return self.size_bytes
 
+
 class ArrayDatatype(Datatype):
-    #need to be mindful of padding, otherwise it is a fixed size loop
-    def __init__(self, numberOfElements, datatype, parametername, In = None, Out = None):
+    # need to be mindful of padding, otherwise it is a fixed size loop
+
+    def __init__(self, numberOfElements, datatype,
+                 parametername, In=None, Out=None):
         self.numberOfElements = numberOfElements
         self.datatype = datatype
-        self.In = parametername.endswith("_in") or parametername.endswith("_inout") if In is None else In
-        self.Out = parametername.endswith("_out") or parametername.endswith("_inout") if Out is None else Out
+        self.In = parametername.endswith("_in") or parametername.endswith(
+            "_inout") if In is None else In
+        self.Out = parametername.endswith("_out") or parametername.endswith(
+            "_inout") if Out is None else Out
+
     def setXml(self, xml):
         xml.set("bits", str(self.getSize() * 8))
         xml.set("ctype", self.declaration(""))
@@ -346,16 +493,22 @@ class ArrayDatatype(Datatype):
         typ = ET.SubElement(xml, "array")
         typ.set("elements", self.numberOfElements)
         self.datatype.setXml(typ)
+
     def declaration(self, identifier):
-        return self.datatype.declaration(identifier + "[" + str(self.numberOfElements) + "]")
+        return self.datatype.declaration(
+            identifier + "[" + str(self.numberOfElements) + "]")
+
     def isInput(self):
         return self.In
+
     def isOutput(self):
         return self.Out
+
     def stringify(self, identifier, indention):
         if self.numberOfElements == "1":
-            #no loop required for 1 element
-            return "{0}{1}".format(indention * '\t', self.datatype.stringify("(*" + identifier + ")", indention))
+            # no loop required for 1 element
+            return "{0}{1}".format(
+                indention * '\t', self.datatype.stringify("(*" + identifier + ")", indention))
         return """
 {indention}/* writing array {name} with {numberOfElements} elements */
 {indention}{{
@@ -364,17 +517,26 @@ class ArrayDatatype(Datatype):
 {serialization}
 {indention}	}}
 {indention}}}""".format(
-    name = identifier,
-    numberOfElements = self.numberOfElements,
-    indention = indention * '\t',
-    serialization = self.datatype.stringify("" + identifier + "[{}COUNTER_VAR{}]".format(prefix, indention), indention + 2),
-    indentID = indention,
-    prefix = prefix,
-    )
+            name=identifier,
+            numberOfElements=self.numberOfElements,
+            indention=indention * '\t',
+            serialization=self.datatype.stringify(
+                "" +
+                identifier +
+                "[{}COUNTER_VAR{}]".format(
+                    prefix,
+                    indention),
+                indention +
+                2),
+            indentID=indention,
+            prefix=prefix,
+        )
+
     def unstringify(self, destination, identifier, indention):
         if self.numberOfElements == "1":
-            #no loop required for 1 element
-            return "{0}{1}".format(indention * '\t', self.datatype.unstringify(destination, "(*" + identifier + ")", indention))
+            # no loop required for 1 element
+            return "{0}{1}".format(
+                indention * '\t', self.datatype.unstringify(destination, "(*" + identifier + ")", indention))
         return """
 {indention}/* reading array {identifier} with {noe} elements */
 {indention}{{
@@ -383,32 +545,49 @@ class ArrayDatatype(Datatype):
 {payload}
 {indention}	}}
 {indention}}}""".format(
-    identifier = identifier,
-    noe = self.numberOfElements,
-    indention = indention * '\t',
-    payload = self.datatype.unstringify(destination, identifier + "[{}COUNTER_VAR{}]".format(prefix, indention), indention + 2),
-    ID = indention,
-    prefix = prefix,
-    )
+            identifier=identifier,
+            noe=self.numberOfElements,
+            indention=indention * '\t',
+            payload=self.datatype.unstringify(
+                destination,
+                identifier +
+                "[{}COUNTER_VAR{}]".format(
+                    prefix,
+                    indention),
+                indention +
+                2),
+            ID=indention,
+            prefix=prefix,
+        )
+
     def getSize(self):
         return int(self.numberOfElements) * self.datatype.getSize()
 
+
 class PointerDatatype(Datatype):
-    #need to be mindful of parring, otherwise it is a variable sized loop
-    #if the pointer is used for input, output or both depends on the name, for example p_in, p_out or p_inout
+    # need to be mindful of parring, otherwise it is a variable sized loop
+    # if the pointer is used for input, output or both depends on the name,
+    # for example p_in, p_out or p_inout
+
     def __init__(self, signature, datatype, parametername):
         assert None, "Code for pointers does not work yet"
         self.signature = signature
         self.datatype = datatype
-        self.In = parametername.endswith("_in") or parametername.endswith("_inout")
-        self.Out = parametername.endswith("_out") or parametername.endswith("_inout")
+        self.In = parametername.endswith(
+            "_in") or parametername.endswith("_inout")
+        self.Out = parametername.endswith(
+            "_out") or parametername.endswith("_inout")
+
     def setXml(self, xml):
         xml.set("bits", "???")
         xml.set("ctype", self.signature)
+
     def declaration(self, identifier):
         return self.signature + " " + identifier
+
     def setNumberOfElementsIdentifier(self, numberOfElementsIdentifier):
         self.numberOfElementsIdentifier = numberOfElementsIdentifier
+
     def stringify(self, identifier, indention):
         return """
 {indention}/* writing pointer {type}{name} with {index} elements*/
@@ -418,12 +597,14 @@ class PointerDatatype(Datatype):
 {serialization}
 {indention}	}}
 {indention}}}""".format(
-    name = identifier,
-    type = self.signature,
-    index = self.numberOfElementsIdentifier,
-    indention = indention * '\t',
-    serialization = self.datatype.stringify(identifier + "[i]", indention + 2),
-    )
+            name=identifier,
+            type=self.signature,
+            index=self.numberOfElementsIdentifier,
+            indention=indention * '\t',
+            serialization=self.datatype.stringify(
+                identifier + "[i]", indention + 2),
+        )
+
     def unstringify(self, destination, identifier, indention):
         return """
 {indention}/* reading pointer {signature}{identifier} with [{numberOfElementsIdentifier}] elements*/
@@ -433,26 +614,33 @@ class PointerDatatype(Datatype):
 {idDeserializer}
 {indention}	}}
 {indention}}}""".format(
-    identifier = identifier,
-    signature = self.signature,
-    numberOfElementsIdentifier = self.numberOfElementsIdentifier,
-    indention = indention * '\t',
-    idDeserializer = self.datatype.unstringify(destination, identifier + "[i]", indention + 2),
-    )
+            identifier=identifier,
+            signature=self.signature,
+            numberOfElementsIdentifier=self.numberOfElementsIdentifier,
+            indention=indention * '\t',
+            idDeserializer=self.datatype.unstringify(
+                destination, identifier + "[i]", indention + 2),
+        )
+
     def isInput(self):
         return self.In
+
     def isOutput(self):
         return self.Out
+
     def getSize(self):
         return 0.
 
+
 class StructDatatype(Datatype):
-    #just call the functions of all the members in order
+    # just call the functions of all the members in order
+
     def __init__(self, signature, memberList, file, lineNumber):
         self.signature = signature
         self.memberList = memberList
         self.file = file
         self.lineNumber = lineNumber
+
     def setXml(self, xml):
         xml.set("bits", str(self.getSize()))
         xml.set("ctype", self.signature)
@@ -464,66 +652,93 @@ class StructDatatype(Datatype):
             member.set("name", e["name"])
             memberpos += 1
             e["datatype"].setXml(member)
+
     def declaration(self, identifier):
         return self.signature + " " + identifier
+
     def stringify(self, identifier, indention):
-        members = ", ".join(m["datatype"].declaration(m["name"]) for m in self.memberList)
-        #print(self.memberList)
-        memberStringification = "".join(m["datatype"].stringify(identifier + "." + m["name"], indention + 1) for m in self.memberList)
+        members = ", ".join(m["datatype"].declaration(m["name"])
+                            for m in self.memberList)
+        # print(self.memberList)
+        memberStringification = "".join(
+            m["datatype"].stringify(
+                identifier + "." + m["name"],
+                indention + 1) for m in self.memberList)
         return "{indention}/*writing {identifier} of type {type} with members {members}*/\n{indention}{{{memberStringification}\n{indention}}}".format(
-            indention = indention * '\t',
-            type = self.signature,
-            members = members,
-            identifier = identifier,
-            memberStringification = memberStringification,
-            )
+            indention=indention * '\t',
+            type=self.signature,
+            members=members,
+            identifier=identifier,
+            memberStringification=memberStringification,
+        )
+
     def unstringify(self, destination, identifier, indention):
-        memberUnstringification = "".join(m["datatype"].unstringify(destination, identifier + "." + m["name"], indention + 1) for m in self.memberList)
+        memberUnstringification = "".join(
+            m["datatype"].unstringify(
+                destination,
+                identifier + "." + m["name"],
+                indention + 1) for m in self.memberList)
         return """
 {indention}/* reading {signature}{identifier}*/
 {indention}{{
 {memberdeserialize}
 {indention}}}""".format(
-    identifier = identifier,
-    signature = self.signature,
-    indention = indention * '\t',
-    memberdeserialize = memberUnstringification,
-    )
+            identifier=identifier,
+            signature=self.signature,
+            indention=indention * '\t',
+            memberdeserialize=memberUnstringification,
+        )
+
     def isInput(self):
-        #TODO: Go through members and return if for any of them isInput is true
+        # TODO: Go through members and return if for any of them isInput is
+        # true
         raise NotImplemented
+
     def isOutput(self):
-        #TODO: Go through members and return if for any of them isOutput is true
+        # TODO: Go through members and return if for any of them isOutput is
+        # true
         raise NotImplemented
+
     def getSize(self):
-        #print(self.memberList)
+        # print(self.memberList)
         return sum(m["datatype"].getSize() for m in self.memberList)
+
     def getTypeDeclaration(self):
         siglist = self.signature.split(" ")
         isTypedefed = len(siglist) == 1
-        memberDeclarations = ";\n\t".join(m["datatype"].declaration(m["name"]) for m in self.memberList)
+        memberDeclarations = ";\n\t".join(
+            m["datatype"].declaration(
+                m["name"]) for m in self.memberList)
         form = "typedef struct{{\n\t{members};\n}}{sig};\n" if isTypedefed else "{sig}{{\n\t{members};\n}};\n"
         return form.format(
-            sig = self.signature,
-            members = memberDeclarations,
-            )
+            sig=self.signature,
+            members=memberDeclarations,
+        )
+
 
 class Function:
-    #stringify turns a function call into a string and sends it to the other side
-    #unstringify turns a string into arguments to pass to a function
-    #assumes the send function has the signature (void *, size_t);
-    #requests have even numbers, answers have odd numbers
+    # stringify turns a function call into a string and sends it to the other side
+    # unstringify turns a string into arguments to pass to a function
+    # assumes the send function has the signature (void *, size_t);
+    # requests have even numbers, answers have odd numbers
+
     def __init__(self, ID, returntype, name, parameterlist):
-        #returntype can either be a Datatype "void", but no pointer
+        #print("ID:", ID)
+        #print("returntype:", returntype)
+        #print("name:", name)
+        #print("parameterlist:", parameterlist)
+        # returntype can either be a Datatype "void", but no pointer
         self.isVoidReturnType = isVoidDatatype(returntype)
         if not self.isVoidReturnType:
             returnValueName = "return_value_out"
             rt = ArrayDatatype("1", returntype, returnValueName)
-            parameterlist.insert(0, {"parameter":rt, "parametername":returnValueName})
+            parameterlist.insert(
+                0, {"parameter": rt, "parametername": returnValueName})
         self.name = name
         self.parameterlist = parameterlist
         #print(10*'+' + '\n' + "".join(str(p) for p in parameterlist) + '\n' + 10*'-' + '\n')
         self.ID = ID
+
     def getXml(self, entry):
         if self.name in functionIgnoreList:
             return
@@ -554,30 +769,41 @@ class Function:
             param.set("name", p["parametername"])
             i += 1
             p["parameter"].setXml(param)
+
     def getOriginalDeclaration(self):
-        returnvalue = "void " if self.isVoidReturnType else self.parameterlist[0]["parameter"].declaration("")
+        returnvalue = "void " if self.isVoidReturnType else self.parameterlist[
+            0]["parameter"].declaration("")
         if returnvalue.endswith(" [1]"):
             returnvalue = returnvalue[:-3]
         start = 0 if self.isVoidReturnType else 1
         return "{returnvalue}{functionname}({parameterlist});".format(
-                returnvalue = returnvalue,
-                functionname = self.name,
-                parameterlist = ", ".join(p["parameter"].declaration(p["parametername"]) for p in self.parameterlist[start:]),
-            )
+            returnvalue=returnvalue,
+            functionname=self.name,
+            parameterlist=", ".join(
+                p["parameter"].declaration(
+                    p["parametername"]) for p in self.parameterlist[
+                    start:]),
+        )
+
     def getParameterDeclaration(self):
-        parameterdeclaration = ", ".join(p["parameter"].declaration(p["parametername"]) for p in self.parameterlist)
+        parameterdeclaration = ", ".join(
+            p["parameter"].declaration(
+                p["parametername"]) for p in self.parameterlist)
         if parameterdeclaration == "":
             parameterdeclaration = "void"
         return parameterdeclaration
+
     def getCall(self):
         #print(self.name, self.parameterlist)
         returnvalue = "*return_value_out = " if not self.isVoidReturnType else ""
-        parameterlist = self.parameterlist if self.isVoidReturnType else self.parameterlist[1:]
+        parameterlist = self.parameterlist if self.isVoidReturnType else self.parameterlist[
+            1:]
         return "{returnvalue}{functionname}({parameterlist});".format(
-            returnvalue = returnvalue,
-            functionname = self.name,
-            parameterlist = ", ".join(p["parametername"] for p in parameterlist),
-            )
+            returnvalue=returnvalue,
+            functionname=self.name if self.ID > 0 else self.name + "_impl",
+            parameterlist=", ".join(p["parametername"] for p in parameterlist),
+        )
+
     def getDefinition(self):
         if self.name in functionNoAnswerList:
             return """
@@ -599,17 +825,21 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 	return result;
 }}
 """.format(
-    requestID = self.ID * 2,
-    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 1) for p in self.parameterlist if p["parameter"].isInput()),
-    functionname = self.name,
-    parameterdeclaration = self.getParameterDeclaration(),
-    prefix = prefix,
-    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()) + 1,
-    )
+                requestID=self.ID * 2,
+                inputParameterSerializationCode="".join(
+                    p["parameter"].stringify(
+                        p["parametername"],
+                        1) for p in self.parameterlist if p["parameter"].isInput()),
+                functionname=self.name,
+                parameterdeclaration=self.getParameterDeclaration(),
+                prefix=prefix,
+                messagesize=sum(p["parameter"].getSize() for p in self.parameterlist if p[
+                                "parameter"].isInput()) + 1,
+            )
         return """
 RPC_RESULT {functionname}({parameterdeclaration}){{
 	{prefix}mutex_lock(RPC_mutex_caller);
-	
+
 	for (;;){{
 		{prefix}mutex_lock(RPC_mutex_in_caller);
 
@@ -650,21 +880,31 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 	/* assert_dead_code; */
 }}
 """.format(
-    requestID = self.ID * 2,
-    answerID = self.ID * 2 + 1,
-    inputParameterSerializationCode = "".join(p["parameter"].stringify(p["parametername"], 2) for p in self.parameterlist if p["parameter"].isInput()),
-    functionname = self.name,
-    parameterdeclaration = self.getParameterDeclaration(),
-    outputParameterDeserialization = "".join(p["parameter"].unstringify(prefix + "buffer", p["parametername"], 4) for p in self.parameterlist if p["parameter"].isOutput()),
-    prefix = prefix,
-    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput()) + 1,
-    )
+            requestID=self.ID * 2,
+            answerID=self.ID * 2 + 1,
+            inputParameterSerializationCode="".join(
+                p["parameter"].stringify(
+                    p["parametername"],
+                    2) for p in self.parameterlist if p["parameter"].isInput()),
+            functionname=self.name,
+            parameterdeclaration=self.getParameterDeclaration(),
+            outputParameterDeserialization="".join(
+                p["parameter"].unstringify(
+                    prefix + "buffer",
+                    p["parametername"],
+                    4) for p in self.parameterlist if p["parameter"].isOutput()),
+            prefix=prefix,
+            messagesize=sum(p["parameter"].getSize() for p in self.parameterlist if p[
+                            "parameter"].isInput()) + 1,
+        )
+
     def getDeclaration(self):
         return "RPC_RESULT {}({});".format(
-            #prefix,
+            # prefix,
             self.name,
             self.getParameterDeclaration(),
-            )
+        )
+
     def getRequestParseCase(self, buffer):
         if self.name in functionNoAnswerList:
             return """
@@ -679,12 +919,20 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 		/* This function has been set to receive no answer */
 		}}
 		break;""".format(
-    ID = self.ID * 2,
-    declaration = self.getDeclaration(),
-    parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
-    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput()),
-    functioncall = self.getCall(),
-    )
+                ID=self.ID * 2,
+                declaration=self.getDeclaration(),
+                parameterdeclarations="".join(
+                    "\t\t\t" +
+                    p["parameter"].declaration(
+                        p["parametername"]) +
+                    ";\n" for p in self.parameterlist),
+                inputParameterDeserialization="".join(
+                    p["parameter"].unstringify(
+                        buffer,
+                        p["parametername"],
+                        3) for p in self.parameterlist if p["parameter"].isInput()),
+                functioncall=self.getCall(),
+            )
         return """
 		case {ID}: /* {declaration} */
 		{{
@@ -701,62 +949,79 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 			{prefix}message_commit();
 		}}
 		break;""".format(
-    ID = self.ID * 2,
-    declaration = self.getDeclaration(),
-    parameterdeclarations = "".join("\t\t\t" + p["parameter"].declaration(p["parametername"]) + ";\n" for p in self.parameterlist),
-    inputParameterDeserialization = "".join(p["parameter"].unstringify(buffer, p["parametername"], 3) for p in self.parameterlist if p["parameter"].isInput()),
-    functioncall = self.getCall(),
-    outputParameterSerialization = "".join(p["parameter"].stringify(p["parametername"], 3) for p in self.parameterlist if p["parameter"].isOutput()),
-    ID_plus_1 = self.ID * 2 + 1,
-    prefix = prefix,
-    messagesize = sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput()) + 1,
-    )
+            ID=self.ID * 2,
+            declaration=self.getDeclaration(),
+            parameterdeclarations="".join(
+                "\t\t\t" +
+                p["parameter"].declaration(
+                    p["parametername"]) +
+                ";\n" for p in self.parameterlist),
+            inputParameterDeserialization="".join(
+                p["parameter"].unstringify(
+                    buffer,
+                    p["parametername"],
+                    3) for p in self.parameterlist if p["parameter"].isInput()),
+            functioncall=self.getCall(),
+            outputParameterSerialization="".join(
+                p["parameter"].stringify(
+                    p["parametername"],
+                    3) for p in self.parameterlist if p["parameter"].isOutput()),
+            ID_plus_1=self.ID * 2 + 1,
+            prefix=prefix,
+            messagesize=sum(p["parameter"].getSize() for p in self.parameterlist if p[
+                            "parameter"].isOutput()) + 1,
+        )
+
     def getAnswerSizeCase(self, buffer):
         if self.name in functionNoAnswerList:
             return """\t\t/* case {ID}: {declaration}
 \t\t\tThis function has been set to receive no answer */
 """.format(
-    declaration = self.getDeclaration(),
-    ID = self.ID * 2 + 1,
-    )
-        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isOutput())
+                declaration=self.getDeclaration(),
+                ID=self.ID * 2 + 1,
+            )
+        size = 1 + sum(p["parameter"].getSize()
+                       for p in self.parameterlist if p["parameter"].isOutput())
         retvalsetcode = ""
-        if type(size) == float: #variable length
+        if isinstance(size, float):  # variable length
             retvalsetcode += """			if (size_bytes >= 3)
 				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
 			else{{
 				returnvalue.size = 3;
 				returnvalue.result = RPC_COMMAND_INCOMPLETE;
-			}}""".format(buffer = buffer, prefix = prefix)
+			}}""".format(buffer=buffer, prefix=prefix)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
         return """\t\tcase {ID}: /* {declaration} */
 {retvalsetcode}
 \t\t\tbreak;
 """.format(
-    declaration = self.getDeclaration(),
-    ID = self.ID * 2 + 1,
-    retvalsetcode = retvalsetcode,
-    )
+            declaration=self.getDeclaration(),
+            ID=self.ID * 2 + 1,
+            retvalsetcode=retvalsetcode,
+        )
+
     def getAnswerParseCase(self, buffer):
         if self.name in functionNoAnswerList:
             return ""
         return """\t\tcase {ID}: /* {declaration} */
 \t\t\tbreak; /*TODO*/
 """.format(
-    ID = self.ID * 2 + 1,
-    declaration = self.getDeclaration(),
-    )
+            ID=self.ID * 2 + 1,
+            declaration=self.getDeclaration(),
+        )
+
     def getRequestSizeCase(self, buffer):
-        size = 1 + sum(p["parameter"].getSize() for p in self.parameterlist if p["parameter"].isInput())
+        size = 1 + sum(p["parameter"].getSize()
+                       for p in self.parameterlist if p["parameter"].isInput())
         retvalsetcode = ""
-        if type(size) == float: #variable length
+        if isinstance(size, float):  # variable length
             retvalsetcode += """			if (size_bytes >= 3)
 				returnvalue.size = {buffer}[1] + {buffer}[2] << 8;
 			else{{
 				returnvalue.size = 3;
 				returnvalue.result = RPC_COMMAND_INCOMPLETE;
-			}}""".format(buffer = buffer, prefix = prefix)
+			}}""".format(buffer=buffer, prefix=prefix)
         else:
             retvalsetcode += "\t\t\treturnvalue.size = " + str(size) + ";"
         return """
@@ -764,19 +1029,24 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 {retvalsetcode}
 \t\t\tbreak;
 """.format(
-    answerID = self.ID * 2,
-    retvalsetcode = retvalsetcode,
-    functiondeclaration = self.getDeclaration(),
-    )
+            answerID=self.ID * 2,
+            retvalsetcode=retvalsetcode,
+            functiondeclaration=self.getDeclaration(),
+        )
+
     def getDocumentation(self):
         class BytePositionCounter:
-            def __init__(self, start = 0):
+
+            def __init__(self, start=0):
                 self.position = start
+
             def getBytes(self, length):
                 form = "{start}" if length == 1 else "{start}-{end}"
                 self.position += length
-                return form.format(start = self.position - length, end = self.position - 1)
-        pos = BytePositionCounter(start = 1)
+                return form.format(start=self.position -
+                                   length, end=self.position - 1)
+        pos = BytePositionCounter(start=1)
+
         def stripOneDimensionalArray(vartype):
             if vartype.endswith(" [1]"):
                 vartype = vartype[:-4]
@@ -787,26 +1057,41 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
             <td class="content">{length}</td>
             <td class="content">{varname}</td>"""
         inputvariables = "</tr><tr>".join(tableformat.format(
-                length = p["parameter"].getSize(),
-                varname = p["parametername"],
-                bytes = pos.getBytes(p["parameter"].getSize()),
-                type = stripOneDimensionalArray(p["parameter"].declaration("")),
-                )
+            length=p["parameter"].getSize(),
+            varname=p["parametername"],
+            bytes=pos.getBytes(p["parameter"].getSize()),
+            type=stripOneDimensionalArray(p["parameter"].declaration("")),
+        )
             for p in self.parameterlist if p["parameter"].isInput())
-        ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(ID = self.ID * 2)
-        inputvariables = ID + "</tr><tr>" + inputvariables if len(inputvariables) > 0 else ID
-        pos = BytePositionCounter(start = 1)
+        ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(
+            ID=self.ID * 2)
+        inputvariables = ID + "</tr><tr>" + \
+            inputvariables if len(inputvariables) > 0 else ID
+        pos = BytePositionCounter(start=1)
+
+        def getPredefinedData(name):
+            if name == "hash_out":
+                return '"' + rawhash + '"'
+            elif name == "start_command_id_out":
+                return str(start_command_id)
+            elif name == "version_out":
+                return str(version_number)
+            assert False, "Internal error: invalid name for predefined variable value: " + name
         outputvariables = "</tr><tr>".join(tableformat.format(
-                length = p["parameter"].getSize(),
-                varname = p["parametername"],
-                bytes = pos.getBytes(p["parameter"].getSize()),
-                type = stripOneDimensionalArray(p["parameter"].declaration("")),
-                )
+            length=p["parameter"].getSize(),
+            varname=p["parametername"] if self.ID != 0 else p[
+                "parametername"] + ' = ' + getPredefinedData(p["parametername"]),
+            bytes=pos.getBytes(p["parameter"].getSize()),
+            type=stripOneDimensionalArray(p["parameter"].declaration("")),
+        )
             for p in self.parameterlist if p["parameter"].isOutput())
-        ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(ID = self.ID * 2 + 1)
-        outputvariables = ID + "</tr><tr>" + outputvariables if len(outputvariables) > 0 else ID
+        ID = '<td class="content">0</td><td class="content">uint8_t</td><td class="content">1</td><td class="content">ID = {ID}</td>'.format(
+            ID=self.ID * 2 + 1)
+        outputvariables = ID + "</tr><tr>" + \
+            outputvariables if len(outputvariables) > 0 else ID
 
         structSet = set()
+
         def addToStructSet(structSet, parameter):
             if isinstance(parameter, StructDatatype):
                 structSet.add(parameter)
@@ -817,6 +1102,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         for p in self.parameterlist:
             addToStructSet(structSet, p["parameter"])
         enumSet = set()
+
         def addToEnumSet(enumSet, parameter):
             if isinstance(parameter, StructDatatype):
                 for m in parameter.memberList:
@@ -831,7 +1117,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         <p class="static">{name}</p>
         <table>
             <tr>
-                <th>Byte</th>
+                <th>Byte Index</th>
                 <th>Type</th>
                 <th>Length</th>
                 <th>Variable</th>
@@ -843,15 +1129,17 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         structcontent = ""
         for s in structSet:
             pos = BytePositionCounter()
-            structcontent += contentformat.format(name = s.signature, content = 
-                "</tr><tr>".join(
-                    tableformat.format(
-                        length = m["datatype"].getSize(),
-                        varname = m["name"],
-                        bytes = pos.getBytes(m["datatype"].getSize()),
-                        type = stripOneDimensionalArray(m["datatype"].declaration("")),
-                    ) for m in s.memberList)
-                )
+            structcontent += contentformat.format(name=s.signature, content="</tr><tr>".join(
+                tableformat.format(
+                    length=m[
+                        "datatype"].getSize(),
+                    varname=m["name"],
+                    bytes=pos.getBytes(
+                        m["datatype"].getSize()),
+                    type=stripOneDimensionalArray(
+                        m["datatype"].declaration("")),
+                ) for m in s.memberList)
+            )
         enumcontent = ""
         for e in enumSet:
             pos = BytePositionCounter()
@@ -865,13 +1153,13 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
             <tr>
                 {content}
             </tr>
-        </table>""".format(name = e.name, content =
-            "</tr><tr>".join('<td class="content">{name}</td><td class="content">{value}</td>'.format(
-                name = m["name"],
-                value = m["value"])
-                    for m in e.values)
+        </table>""".format(name=e.name, content="</tr><tr>".join('<td class="content">{name}</td><td class="content">{value}</td>'.format(
+                name=m["name"],
+                value=m["value"])
+                for m in e.values)
             )
-        replycontent = contentformat.format(name = "Reply", content = outputvariables)
+        replycontent = contentformat.format(
+            name="Reply", content=outputvariables)
         if self.name in functionNoAnswerList:
             replycontent = '<p class="static">Reply: None</p>'
         return '''<div class="function">
@@ -891,24 +1179,31 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         {enumcontent}
         </table>
         </div>'''.format(
-            originalfunctiondeclaration = self.getOriginalDeclaration(),
-            functiondeclaration = self.getDeclaration(),
-            requestcontent = contentformat.format(name = "Request", content = inputvariables),
-            replycontent = replycontent,
-            structcontent = structcontent,
-            enumcontent = enumcontent,
-            requestID = self.ID * 2,
-            replyID = self.ID * 2 + 1,
-            )
+            originalfunctiondeclaration=self.getOriginalDeclaration(),
+            functiondeclaration=self.getDeclaration(),
+            requestcontent=contentformat.format(
+                name="Request", content=inputvariables),
+            replycontent=replycontent,
+            structcontent=structcontent,
+            enumcontent=enumcontent,
+            requestID=self.ID * 2,
+            replyID=self.ID * 2 + 1,
+        )
+
 
 def setIntegralDataType(signature, size_bytes):
     datatypes[signature] = IntegralDatatype(signature, size_bytes)
 
+
 def setBasicDataType(signature, size_bytes):
     datatypes[signature] = BasicDatatype(signature, size_bytes)
 
-def setEnumDataType(signature, size_bytes, transfertype, values, name, typedef):
-    datatypes[signature] = EnumDatatype(signature, size_bytes, transfertype, values, name, typedef)
+
+def setEnumDataType(signature, size_bytes, transfertype,
+                    values, name, typedef):
+    datatypes[signature] = EnumDatatype(
+        signature, size_bytes, transfertype, values, name, typedef)
+
 
 def setPredefinedDataTypes():
     typeslist = (
@@ -926,23 +1221,25 @@ def setPredefinedDataTypes():
         ("uint24_t", 3),
         ("uint32_t", 4),
         ("uint64_t", 8),
-        )
+    )
     for t in typeslist:
         setIntegralDataType(t[0], t[1])
 
+
 def setEnumTypes(enums):
     for e in enums:
-        #calculating minimum and maximim can be done better with map(max, zip(*e["values"])) or something like that
+        # calculating minimum and maximim can be done better with map(max,
+        # zip(*e["values"])) or something like that
         minimum = maximum = 0
-        for v in e["values"]: #parse the definition of the enum values+		
-            if type(v["value"]) == type(0): #its just a (default) int
+        for v in e["values"]:  # parse the definition of the enum values+
+            if isinstance(v["value"], type(0)):  # its just a (default) int
                 intValue = v["value"]
             else:
                 try:
                     intValue = int("".join(v["value"].split(" ")))
-                    #it is something like "- 1000"
+                    # it is something like "- 1000"
                 except:
-                    #it is something complicated, assume an int has 4 bytes
+                    # it is something complicated, assume an int has 4 bytes
                     minimum = -2**30
                     intValue = 2 ** 30
             minimum = min(minimum, intValue)
@@ -953,7 +1250,8 @@ def setEnumTypes(enums):
             setBasicDataType(name, 0)
             continue
         from math import log, ceil
-        requiredBits = ceil(log(valRange+1, 2)) # +1 because a 2 element enum would result in 0 bit field
+        # +1 because a 2 element enum would result in 0 bit field
+        requiredBits = ceil(log(valRange + 1, 2))
         requiredBytes = ceil(requiredBits / 8.)
         if requiredBytes == 0:
             pass
@@ -964,35 +1262,64 @@ def setEnumTypes(enums):
         elif requiredBytes == 3 or requiredBytes == 4:
             cast = "int32_t"
         else:
-            assert False, "enum " + e["name"] +  " appears to require " + str(requiredBytes) + "bytes and does not fit in a 32 bit integer"
+            assert False, "enum " + e["name"] + " appears to require " + str(
+                requiredBytes) + "bytes and does not fit in a 32 bit integer"
         if minimum >= 0:
             cast = "u" + cast
-        setEnumDataType(name, requiredBytes, cast, e["values"], e["name"], e["typedef"])
+        setEnumDataType(
+            name,
+            requiredBytes,
+            cast,
+            e["values"],
+            e["name"],
+            e["typedef"])
         datatypeDeclarations.append(datatypes[name].getTypeDeclaration())
+
 
 def setStructTypes(structs):
     for s in structs:
         memberList = []
         for t in structs[s]["properties"]["public"]:
-            memberList.append({"name" : t["name"], "datatype" : getStructParameter(t)})
-            #print(structs[s][t])
+            memberList.append(
+                {"name": t["name"], "datatype": getStructParameter(t)})
+            # print(structs[s][t])
         assert len(memberList) > 0, "struct with no members is not supported"
-        isTypedefed = structs[s]["properties"]["public"][0]['property_of_class'] != s
+        isTypedefed = structs[s]["properties"][
+            "public"][0]['property_of_class'] != s
         signature = s if isTypedefed else "struct " + s
-        datatypes[signature] = StructDatatype(signature, memberList, currentFile, structs[s]["line_number"])
+        datatypes[signature] = StructDatatype(
+            signature, memberList, currentFile, structs[s]["line_number"])
         datatypeDeclarations.append(datatypes[signature].getTypeDeclaration())
 
+
+def getHash():
+    return """/* This hash is generated from the Python script that generated this file,
+   the configs passed to it and the source header file specified within the
+   server config. You can use it to verify that the client and the server
+   use the same protocol. */
+#define {prefix}HASH "{hashstring}"
+#define {prefix}HASH_SIZE 16
+#define {prefix}START_COMMAND_ID {start_command_id}
+#define {prefix}VERSION {version}""".format(prefix=prefix, hashstring=hashstring, start_command_id=start_command_id, version=version_number)
+
+
 def getStructParameter(parameter):
-    basetype = getDatatype(parameter["type"], currentFile, parameter["line_number"])
+    basetype = getDatatype(
+        parameter["type"],
+        currentFile,
+        parameter["line_number"])
     if 'multi_dimensional_array_size' in parameter:
-        retval = ArrayDatatype(parameter["multi_dimensional_array_size"][-1], basetype, parameter["name"])
+        retval = ArrayDatatype(
+            parameter["multi_dimensional_array_size"][-1], basetype, parameter["name"])
         for d in reversed(parameter["multi_dimensional_array_size"][:-1]):
             retval = ArrayDatatype(d, retval, parameter["name"])
         return retval
     if 'array_size' in parameter:
-        return ArrayDatatype(parameter["array_size"], basetype, parameter["name"])
+        return ArrayDatatype(
+            parameter["array_size"], basetype, parameter["name"])
     assert parameter["type"][-1] != '*', "Pointers are not allowed in structs"
     return basetype
+
 
 def setDefines(newdefines):
     for d in newdefines:
@@ -1002,19 +1329,25 @@ def setDefines(newdefines):
         except:
             pass
 
+
 def getFunctionReturnType(function):
-    assert function["returns_pointer"] == 0, "in function " + function["debug"] + " line " + str(function["line_number"]) + ": " + "Pointers as return types are not supported"
-    return getDatatype(function["rtnType"], currentFile, function["line_number"])
+    assert function["returns_pointer"] == 0, "in function " + function["debug"] + " line " + \
+        str(function["line_number"]) + ": " + \
+        "Pointers as return types are not supported"
+    return getDatatype(function["rtnType"],
+                       currentFile, function["line_number"])
+
 
 def getParameterArraySizes(parameter):
     try:
         tokens = parameter["method"]["debug"].split(" ")
-        #print(tokens)
+        # print(tokens)
     except KeyError:
         if "array_size" in parameter:
             return [int(parameter["array_size"])]
         assert False, "Multidimensional arrays inside structs currently not supported"
-    assert parameter["name"] in tokens, "Error: cannot get non-existing parameter " + parameter["name"] + " from declaration " + parameter["method"]["debug"]
+    assert parameter["name"] in tokens, "Error: cannot get non-existing parameter " + \
+        parameter["name"] + " from declaration " + parameter["method"]["debug"]
     while tokens[0] != parameter["name"]:
         tokens = tokens[1:]
     tokens = tokens[1:]
@@ -1029,92 +1362,122 @@ def getParameterArraySizes(parameter):
         parameterSizes[-1] = parameterSizes[-1][1:]
     return parameterSizes
 
+
 def getFunctionParameter(parameter):
-    #return (isPointerRequiringSize, DataType)
-    if parameter["type"][-1] == '*': #pointer
-        assert parameter["type"][-3] != '*', "Multipointer as parameter is not allowed"
+    # return (isPointerRequiringSize, DataType)
+    if parameter["type"][-1] == '*':  # pointer
+        assert parameter[
+            "type"][-3] != '*', "Multipointer as parameter is not allowed"
         assert parameter["name"].endswith("_in") or parameter["name"].endswith("_out") or parameter["name"].endswith("_inout"),\
-               'In {1}:{2}: Pointer parameter "{0}" must either have a suffix "_in", "_out", "_inout" or be a fixed size array.'.format(parameter["name"], currentFile, parameter["line_number"])
-        return {"isPointerRequiringSize":True, "parameter":PointerDatatype(parameter["type"], getDatatype(parameter["type"][:-2], currentFile, parameter["line_number"]), parameter["name"])}
-    basetype = getDatatype(parameter["type"], currentFile, parameter["line_number"])
-    if parameter["array"]: #array
+            'In {1}:{2}: Pointer parameter "{0}" must either have a suffix "_in", "_out", "_inout" or be a fixed size array.'.format(
+                parameter["name"], currentFile, parameter["line_number"])
+        return {"isPointerRequiringSize": True, "parameter": PointerDatatype(parameter["type"], getDatatype(
+            parameter["type"][:-2], currentFile, parameter["line_number"]), parameter["name"])}
+    basetype = getDatatype(
+        parameter["type"],
+        currentFile,
+        parameter["line_number"])
+    if parameter["array"]:  # array
         assert parameter["name"][-3:] == "_in" or parameter["name"][-4:] == "_out" or parameter["name"][-6:] == "_inout",\
-               'Array parameter name "' + parameter["name"] + '" must end with "_in", "_out" or "_inout" in {}:{} '.format(currentFile, parameter["line_number"])
+            'Array parameter name "' + \
+            parameter["name"] + '" must end with "_in", "_out" or "_inout" in {}:{} '.format(
+                currentFile, parameter["line_number"])
         arraySizes = list(reversed(getParameterArraySizes(parameter)))
         current = ArrayDatatype(arraySizes[0], basetype, parameter["name"])
         arraySizes = arraySizes[1:]
         for arraySize in arraySizes:
             current = ArrayDatatype(arraySize, current, parameter["name"])
-        return {"isPointerRequiringSize":False, "parameter":current}
-    else: #base type
-        return {"isPointerRequiringSize":False, "parameter":basetype}
+        return {"isPointerRequiringSize": False, "parameter": current}
+    else:  # base type
+        return {"isPointerRequiringSize": False, "parameter": basetype}
+
 
 def getFunctionParameterList(parameters):
     paramlist = []
     isPointerRequiringSize = False
     for p in parameters:
-        if isPointerRequiringSize: #require a size parameter
+        if isPointerRequiringSize:  # require a size parameter
             pointername = parameters[len(paramlist) - 1]["name"]
             pointersizename = p["name"]
-            sizeParameterErrorText = 'Pointer parameter "{0}" must be followed by a size parameter with the name "{0}_size". Or use a fixed size array instead.'.format(pointername)
+            sizeParameterErrorText = 'Pointer parameter "{0}" must be followed by a size parameter with the name "{0}_size". Or use a fixed size array instead.'.format(
+                pointername)
             assert pointersizename == pointername + "_size", sizeParameterErrorText
             functionparameter = getFunctionParameter(p)
-            isPointerRequiringSize = functionparameter["isPointerRequiringSize"]
+            isPointerRequiringSize = functionparameter[
+                "isPointerRequiringSize"]
             parameter = functionparameter["parameter"]
             assert not isPointerRequiringSize, sizeParameterErrorText
-            paramlist[-1]["parameter"].setNumberOfElementsIdentifier(pointersizename)
-            paramlist.append({"parameter":parameter, "parametername":p["name"]})
+            paramlist[-1]["parameter"].setNumberOfElementsIdentifier(
+                pointersizename)
+            paramlist.append(
+                {"parameter": parameter, "parametername": p["name"]})
         else:
             functionparameter = getFunctionParameter(p)
-            isPointerRequiringSize = functionparameter["isPointerRequiringSize"]
+            isPointerRequiringSize = functionparameter[
+                "isPointerRequiringSize"]
             parameter = functionparameter["parameter"]
             if isVoidDatatype(parameter):
                 continue
             parametername = p["name"]
             if parametername == "" and p["type"] != 'void':
                 parametername = "unnamed_parameter" + str(len(paramlist))
-            paramlist.append({"parameter":parameter, "parametername":parametername})
-    assert not isPointerRequiringSize, 'Pointer parameter "{0}" must be followed by a size parameter with the name "{0}_size". Or use a fixed size array instead.'.format(parameters[len(paramlist) - 1]["name"])
-    #for p in paramlist:
-        #print(p.stringify("buffer", "var", 1))
+            paramlist.append(
+                {"parameter": parameter, "parametername": parametername})
+    assert not isPointerRequiringSize, 'Pointer parameter "{0}" must be followed by a size parameter with the name "{0}_size". Or use a fixed size array instead.'.format(parameters[
+                                                                                                                                                                          len(paramlist) - 1]["name"])
+    # for p in paramlist:
+    #print(p.stringify("buffer", "var", 1))
     return paramlist
+
 
 def getFunction(function):
     functionList = []
-    try:
-        getFunction.functionID += 1
-        assert getFunction.functionID < 255, "Too many functions, require changes to allow bigger function ID variable"
-    except AttributeError:
-        getFunction.functionID = 1
-    #for attribute in function:
-        #print(attribute + ":", function[attribute])
-    ID = getFunction.functionID
-    returntype = getFunctionReturnType(function)
     name = function["name"]
+    ID = functionPredefinedIDs.pop(name, None)
+    if ID is None:
+        try:
+            getFunction.functionID += 1
+        except AttributeError:
+            getFunction.functionID = start_command_id
+        while getFunction.functionID in functionPredefinedIDs.values():
+            getFunction.functionID += 1
+        assert getFunction.functionID < 127, "Too many functions, require changes to allow bigger function ID variable"
+        ID = getFunction.functionID
+    returntype = getFunctionReturnType(function)
     parameterlist = getFunctionParameterList(function["parameters"])
     return Function(ID, returntype, name, parameterlist)
-    #for k in function.keys():
-        #print(k, '=', function[k])
-    #for k in function["parameters"][0]["method"].keys():
-        #print(k, '=', function["parameters"][0]["method"][k], "\n")
-        #print(function["parameters"][0]["method"])
-        #for k2 in k["method"].keys():
-            #print(k2, '=', str(k["method"][k2]))
-    #print(10*'_')
-    #print(function.keys())
-    #print("\n")
-    #print(10*"_")
-    #print(returntype)
+    # for k in function.keys():
+    #print(k, '=', function[k])
+    # for k in function["parameters"][0]["method"].keys():
+    #print(k, '=', function["parameters"][0]["method"][k], "\n")
+    # print(function["parameters"][0]["method"])
+    # for k2 in k["method"].keys():
+    #print(k2, '=', str(k["method"][k2]))
+    # print(10*'_')
+    # print(function.keys())
+    # print("\n")
+    # print(10*"_")
+    # print(returntype)
     #print(returntype.stringify("buffer", "var", 1))
     #returntype.stringify("buffer", "var", 1)
     #Function(ID, returntype, name, parameterlist)
 
+
 def checkDefines(defines):
     checklist = (
-        (prefix + "SEND", "A #define {}SEND is required that takes a const void * and a size and sends data over the network. Example: #define {}SEND send".format(prefix)),
-        (prefix + "SLEEP", "A #define {}SLEEP is required that makes the current thread sleep until {}WAKEUP is called or a timeout occured. Returns whether {}WAKEUP was called (and a timeout did not occur)".format(prefix)),
-        (prefix + "WAKEUP", "A #define {}WAKEUP is required that makes the thread sleeping due to {}SLEEP wake up".format(prefix)),
-        )
+        (prefix + "SEND",
+         "A #define {prefix}SEND is required that takes a const void * and a size and sends data over the network. Example: #define {prefix}SEND send".format(prefix=prefix)),
+        (
+            prefix +
+            "SLEEP",
+            "A #define {prefix}SLEEP is required that makes the current thread sleep until {prefix}WAKEUP is called or a timeout occured. Returns whether {prefix}WAKEUP was called (and a timeout did not occur)".format(
+                prefix=prefix)),
+        (
+            prefix +
+            "WAKEUP",
+            "A #define {prefix}WAKEUP is required that makes the thread sleeping due to {prefix}SLEEP wake up".format(
+                prefix=prefix)),
+    )
     for c in checklist:
         success = False
         for d in defines:
@@ -1123,12 +1486,15 @@ def checkDefines(defines):
                 break
         assert success, c[1]
 
+
 def getPathAndFile(filepath):
     from os.path import split
     return split(filepath)
 
+
 def getIncludeFilePath(include):
     return include[1:-1]
+
 
 def setTypes(ast):
     setEnumTypes(ast.enums)
@@ -1136,15 +1502,23 @@ def setTypes(ast):
     setStructTypes(ast.classes)
     setDefines(ast.defines)
 
+
 def getNonstandardTypedefs():
     return "#include <stdint.h>\n" + "".join((
-        "".join("typedef   int8_t  int{0}_t;\n".format(i) for i in range(1, 8)),
-        "".join("typedef  int16_t  int{0}_t;\n".format(i) for i in range(9, 16)),
-        "".join("typedef  int32_t  int{0}_t;\n".format(i) for i in range(17, 32)),
-        "".join("typedef  uint8_t uint{0}_t;\n".format(i) for i in range(1, 8)),
-        "".join("typedef uint16_t uint{0}_t;\n".format(i) for i in range(9, 16)),
-        "".join("typedef uint32_t uint{0}_t;\n".format(i) for i in range(17, 32)),
-        ))
+        "".join("typedef   int8_t  int{0}_t;\n".format(i)
+                for i in range(1, 8)),
+        "".join("typedef  int16_t  int{0}_t;\n".format(i)
+                for i in range(9, 16)),
+        "".join("typedef  int32_t  int{0}_t;\n".format(i)
+                for i in range(17, 32)),
+        "".join("typedef  uint8_t uint{0}_t;\n".format(i)
+                for i in range(1, 8)),
+        "".join("typedef uint16_t uint{0}_t;\n".format(i)
+                for i in range(9, 16)),
+        "".join("typedef uint32_t uint{0}_t;\n".format(i)
+                for i in range(17, 32)),
+    ))
+
 
 def getGenericHeader(version):
     return """
@@ -1155,10 +1529,23 @@ def getGenericHeader(version):
 /* The optional original return value is returned through the first parameter */
 """.format(version, getNonstandardTypedefs())
 
-def getSizeFunction(functions, clientHeader, parser_to_generic_path, parser_to_server_header_path):
+
+def getSizeFunction(functions, clientHeader,
+                    parser_to_generic_path, parser_to_server_header_path):
     return """#include "{network_include}"
-#include "{parser_include}"	
+#include "{parser_include}"
 #include "{parser_to_server_header_path}"
+
+#include <string.h>
+
+{hash}
+
+/* auto-generated implementation */
+void {prefix}get_hash_impl(unsigned char hash_out[16], unsigned char start_command_id_out[1], uint16_t version_out[1]){{
+	memcpy(hash_out, {prefix}HASH, 16);
+	*start_command_id_out = {prefix}START_COMMAND_ID;
+	*version_out = {prefix}VERSION;
+}}
 
 /* Receives a pointer to a (partly) received message and it's size.
    Returns a result and a size. If size equals RPC_SUCCESS then size is the
@@ -1185,12 +1572,14 @@ RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){
 	return returnvalue;
 }}
 """.format(
-    cases = "".join(f.getRequestSizeCase("current") for f in functions),
-    prefix = prefix,
-    network_include = join(parser_to_generic_path, prefix + "network.h"),
-    parser_include = join(parser_to_generic_path, prefix + "parser.h"),
-    parser_to_server_header_path = parser_to_server_header_path,
+        hash=getHash(),
+        cases="".join(f.getRequestSizeCase("current") for f in functions),
+        prefix=prefix,
+        network_include=join(parser_to_generic_path, prefix + "network.h"),
+        parser_include=join(parser_to_generic_path, prefix + "parser.h"),
+        parser_to_server_header_path=parser_to_server_header_path,
     )
+
 
 def getRequestParser(functions):
     buffername = "current"
@@ -1203,10 +1592,11 @@ void {prefix}parse_request(const void *buffer, size_t size_bytes){{
 	switch (*current++){{ /* switch (request ID) */ {cases}
 	}}
 }}""".format(
-    cases = "".join(f.getRequestParseCase(buffername) for f in functions),
-    buffername = buffername,
-    prefix = prefix,
+        cases="".join(f.getRequestParseCase(buffername) for f in functions),
+        buffername=buffername,
+        prefix=prefix,
     )
+
 
 def getAnswerParser(functions):
     return """
@@ -1223,7 +1613,8 @@ void {prefix}parse_answer(const void *buffer, size_t size_bytes){{
 	{prefix}mutex_lock(RPC_mutex_parsing_complete);
 	{prefix}mutex_unlock(RPC_mutex_in_caller);
 }}
-""".format(prefix = prefix)
+""".format(prefix=prefix)
+
 
 def getRPC_Parser_init():
     return """
@@ -1234,7 +1625,8 @@ void {prefix}Parser_init(){{
 	{prefix}mutex_lock(RPC_mutex_parsing_complete);
 	{prefix}mutex_lock(RPC_mutex_answer);
 }}
-""".format(prefix = prefix)
+""".format(prefix=prefix)
+
 
 def getRPC_Parser_exit():
     return """
@@ -1245,13 +1637,13 @@ void {prefix}Parser_exit(){{
 	{prefix}mutex_unlock(RPC_mutex_parsing_complete);
 	{prefix}mutex_unlock(RPC_mutex_answer);
 }}
-""".format(prefix = prefix)
+""".format(prefix=prefix)
+
 
 def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
 RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
-	RPC_SIZE_RESULT returnvalue;
-	returnvalue.result = RPC_COMMAND_INCOMPLETE;
+	RPC_SIZE_RESULT returnvalue = {{RPC_SUCCESS, 0}};
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
 		returnvalue.result = RPC_COMMAND_INCOMPLETE;
@@ -1268,17 +1660,34 @@ RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes)
 	return returnvalue;
 }}
 """.format(
-    answercases = "".join(f.getAnswerSizeCase("current") for f in functions),
-    prefix = prefix,
+        answercases="".join(f.getAnswerSizeCase("current") for f in functions),
+        prefix=prefix,
     )
 
-def generateCode(file, xml, parser_to_network_path, parser_to_server_header_path):
+
+def getHashFunction():
+    return Function(0, getDatatype("void"), prefix + "get_hash", [
+        {'parameter': ArrayDatatype("16",
+                                    getDatatype("unsigned char"),
+                                    "hash_out",
+                                    Out=True),
+            'parametername': "hash_out"},
+        {'parameter': ArrayDatatype("1",
+                                    getDatatype("unsigned char"),
+                                    "start_command_id_out",
+                                    Out=True),
+            'parametername': "start_command_id_out"},
+        {'parameter': ArrayDatatype("1", getDatatype("uint16_t"), "version_out", Out=True), 'parametername': "version_out"}])
+
+
+def generateCode(file, xml, parser_to_network_path,
+                 parser_to_server_header_path):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
-    #return None
-    #checkDefines(ast.defines)
+    # return None
+    # checkDefines(ast.defines)
     setPredefinedDataTypes()
-    #print(ast.includes)
+    # print(ast.includes)
     for i in ast.includes:
         global currentFile
         path = getIncludeFilePath(i)
@@ -1289,25 +1698,25 @@ def generateCode(file, xml, parser_to_network_path, parser_to_server_header_path
         except FileNotFoundError:
             print('Warning: #include file "{}" not found, skipping'.format(path))
     currentFile = file
-    evaluatePragmas(ast.pragmas)
-    #print(ast.enums)
-    #print(ast.typedefs_order)
-    #print(ast.namespaces)
-    #print(ast.global_enums)
-    #print(ast.typedefs)
-    #return None
-    #for a in ast.__dict__:
-        #print(a + ": " + str(getattr(ast, a)))
+    # evaluatePragmas(ast.pragmas)
+    # print(ast.enums)
+    # print(ast.typedefs_order)
+    # print(ast.namespaces)
+    # print(ast.global_enums)
+    # print(ast.typedefs)
+    # return None
+    # for a in ast.__dict__:
+    #print(a + ": " + str(getattr(ast, a)))
     setTypes(ast)
-    #TODO: structs
-    #TODO: typedefs
-    #for d in datatypes:
-        #print(d, datatypes[d].size_bytes)
-    #return None
-    #for a in ast.__dict__:
-        #print(a)
-    #generateFunctionCode(ast.functions[0])
-    functionlist = []
+    # TODO: structs
+    # TODO: typedefs
+    # for d in datatypes:
+    #print(d, datatypes[d].size_bytes)
+    # return None
+    # for a in ast.__dict__:
+    # print(a)
+    # generateFunctionCode(ast.functions[0])
+    functionlist = [getHashFunction()]
     for f in ast.functions:
         if not f["name"] in functionIgnoreList:
             functionlist.append(getFunction(f))
@@ -1321,7 +1730,11 @@ def generateCode(file, xml, parser_to_network_path, parser_to_server_header_path
         f.getXml(entry)
         documentation += "\n<hr>\n" + f.getDocumentation()
     from os.path import basename
-    requestParserImplementation = externC_intro + '\n' + getSizeFunction(functionlist, basename(file), parser_to_network_path, parser_to_server_header_path) + getRequestParser(functionlist) + externC_outro
+    requestParserImplementation = externC_intro + '\n' + getSizeFunction(
+        functionlist,
+        basename(file),
+        parser_to_network_path,
+        parser_to_server_header_path) + getRequestParser(functionlist) + externC_outro
     answerSizeChecker = getAnswerSizeChecker(functionlist)
     answerParser = getAnswerParser(functionlist)
     return rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation
@@ -1341,6 +1754,7 @@ externC_outro = """
 #endif /* __cplusplus */
 """
 
+
 def get_rpc_enum():
     return """typedef enum{{
         RPC_SUCCESS,
@@ -1349,34 +1763,32 @@ def get_rpc_enum():
         RPC_COMMAND_INCOMPLETE
     }} RPC_RESULT;
     """.format(
-        prefix = prefix,
-        )
+        prefix=prefix,
+    )
 
-def getRPC_serviceHeader(headers, headername, typedeclarations, specific_header_to_types_path):
+
+def getRPC_serviceHeader(
+        headers, headername, typedeclarations, specific_header_to_types_path):
     headerDefine = headername.upper()
     return """{doNotModify}
 {includeguardintro}
 {externC_intro}
+{hash}
+
 {rpc_declarations}{externC_outro}
 {includeguardoutro}
 """.format(
-        doNotModify = doNotModifyHeader,
-        externC_intro = externC_intro,
-        externC_outro = externC_outro,
-        includeguardintro = """#ifndef {} 
+        hash=getHash(),
+        doNotModify=doNotModifyHeader,
+        externC_intro=externC_intro,
+        externC_outro=externC_outro,
+        includeguardintro="""#ifndef {}
 #define {}
 """.format(headerDefine, headerDefine),
-        includeguardoutro = """#endif /* {} */""".format(headerDefine),
-        rpc_declarations = """#include <stddef.h>
+        includeguardoutro="""#endif /* {} */""".format(headerDefine),
+        rpc_declarations="""#include <stddef.h>
 #include <inttypes.h>
 #include "{specific_header_to_types_path}"
-
-/* This hash is generated from the Python script that generated this file,
-   the configs passed to it and the source header file specified within the
-   server config. You can use it to identify if both client and server use
-   the same protocol. */
-#define {prefix}HASH "{hashstring}"
-#define {prefix}HASH_SIZE (sizeof {prefix}HASH)
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    These are the payload functions made available by the RPC generator.
@@ -1385,12 +1797,12 @@ def getRPC_serviceHeader(headers, headername, typedeclarations, specific_header_
 {typedeclarations}
 {headers}
 """.format(
-    prefix = prefix,
-    typedeclarations = typedeclarations,
-    headers = headers,
-    specific_header_to_types_path = specific_header_to_types_path,
-    hashstring = hashstring,
-    ),)
+            prefix=prefix,
+            typedeclarations=typedeclarations,
+            headers=headers,
+            specific_header_to_types_path=specific_header_to_types_path,
+        ),)
+
 
 def getNetworkHeader():
     return """
@@ -1430,7 +1842,7 @@ RPC_RESULT {prefix}message_commit(void);
    You need to define 4 mutexes to implement the {prefix}mutex_* functions below.
    See RPC_types.h for a definition of RPC_mutex_id.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-   
+
 void {prefix}mutex_init(void);
 /* Initializes all rpc mutexes. */
 
@@ -1445,8 +1857,8 @@ char {prefix}mutex_lock_timeout(RPC_mutex_id mutex_id);
    occured. The timeout length should be the time you want to wait for an answer
    before giving up. If the time is infinite a lost answer will get the calling
    thread stuck indefinitely. */
-   
-   
+
+
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    The following functions's implementations are automatically generated.
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
@@ -1480,13 +1892,14 @@ void {prefix}parse_answer(const void *buffer, size_t size);
 {externC_outro}
 #endif /* {prefix}NETWORK_H */
 """.format(
-    doNotModifyHeader = doNotModifyHeader,
-    externC_intro = externC_intro,
-    externC_outro = externC_outro,
-    prefix = prefix,
+        doNotModifyHeader=doNotModifyHeader,
+        externC_intro=externC_intro,
+        externC_outro=externC_outro,
+        prefix=prefix,
     )
 
-def generateDocumentation(documentation, filename):
+
+def generateDocumentation(documentation, filename, headerpath):
     import datetime
     now = datetime.datetime.now()
     return """
@@ -1497,7 +1910,7 @@ def generateDocumentation(documentation, filename):
         </head>
     <body>
         <div class="header">
-            <table>
+            <table style="white-space: nowrap;">
                 <tr>
                     <th colspan=2>RPC Documentation<th>
                 </tr>
@@ -1505,10 +1918,19 @@ def generateDocumentation(documentation, filename):
                     <td class="static">Generated by:</td><td><a href="https://github.com/Crystal-Photonics/RPC-Generator">RPC-Generator</a></td>
                 </tr>
                 <tr>
-                    <td class="static">File:</td><td>{filename}.h</td>
+                    <td class="static">Server Header File:</td><td><a href="../{headerpath}">{headerpath}</a></td>
                 </tr>
                 <tr>
-                    <td class="static">Date:</td><td>{date}</td>
+                    <td class="static">Date of Generation:</td><td>{date}</td>
+                </tr>
+                <tr>
+                    <td class="static">Hash:</td><td>{hash}</td>
+                </tr>
+                <tr>
+                    <td class="static">Command ID Start:</td><td>{cmdidstart}</td>
+                </tr>
+                <tr>
+                    <td class="static">Version:</td><td>{version}</td>
                 </tr>
             </table>
         </div>
@@ -1517,11 +1939,17 @@ def generateDocumentation(documentation, filename):
         </div>
     </body>
 </html>""".format(
-    documentation = documentation,
-    filename = filename,
-    date = now.strftime("%Y-%m-%d %H:%M"),
-    prefix=prefix,
+        documentation=documentation,
+        filename=filename,
+        date=now.strftime("%Y-%m-%d %H:%M"),
+        prefix=prefix,
+        hash=rawhash,
+        cmdidstart=start_command_id,
+        version=version_number,
+        headerpath=headerpath,
     )
+
+
 def getCss():
     return """p.static {
   width: 100%;
@@ -1617,6 +2045,8 @@ div.content table.declarations{
     margin-bottom: -10px;
 }
 """
+
+
 def getRpcTypesHeader():
     files = getFilePaths()
     return """{doNotModifyHeader}
@@ -1644,11 +2074,12 @@ typedef enum {{
 
 #endif /* RPC_TYPES_H */
 """.format(
-    doNotModifyHeader = doNotModifyHeader,
-    rpc_enum = get_rpc_enum(),
-    prefix = prefix,
-    extrainclude = files["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"]
+        doNotModifyHeader=doNotModifyHeader,
+        rpc_enum=get_rpc_enum(),
+        prefix=prefix,
+        extrainclude=files["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"]
     )
+
 
 def getRequestParserHeader():
     return """{doNotModifyHeader}
@@ -1667,10 +2098,10 @@ RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes);
 void {prefix}parse_request(const void *buffer, size_t size_bytes);
 {externC_outro}
 """.format(
-    doNotModifyHeader = doNotModifyHeader,
-    externC_intro = externC_intro,
-    externC_outro = externC_outro,
-    prefix = prefix,
+        doNotModifyHeader=doNotModifyHeader,
+        externC_intro=externC_intro,
+        externC_outro=externC_outro,
+        prefix=prefix,
     )
 
 try:
@@ -1678,9 +2109,27 @@ try:
     files = getFilePaths()
     from os.path import join, split, relpath
 
-    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = generateCode(files["ServerHeader"], root, relpath(files["SERVER_GENINCDIR"], files["SERVER_SRCDIR"]), relpath(files["ServerHeader"], files["SERVER_SRCDIR"]))
+    root.set("prefix", prefix)
+    root.set("projectname", projectname)
+    root.set("version_number", str(version_number))
+    root.set("command_id_start", str(start_command_id))
+    root.set("hash", rawhash)
 
-    requestParserImplementation = doNotModifyHeader + '\n' + requestParserImplementation
+    rpcHeader, rpcImplementation, requestParserImplementation, answerParser, answerSizeChecker, documentation = \
+        generateCode(
+            files["ServerHeader"], root, relpath(
+                files["SERVER_GENINCDIR"], files["SERVER_SRCDIR"]), relpath(
+                files["ServerHeader"], files["SERVER_SRCDIR"]))
+
+    for function in functionPredefinedIDs:
+        print(
+            "Warning: #pragma ID {function} {ID} was ignored since no function named {function} was declared".format(
+                function=function,
+                ID=functionPredefinedIDs[function] *
+                2))
+
+    requestParserImplementation = doNotModifyHeader + \
+        '\n' + requestParserImplementation
 
     rpcImplementation = '''{doNotModify}
     {externC_intro}
@@ -1695,67 +2144,208 @@ static char {prefix}initialized;
 
 {implementation}{externC_outro}
     '''.format(
-        doNotModify = doNotModifyHeader,
-        rpc_client_header = join(relpath(files["CLIENT_SPCINCDIR"], files["CLIENT_SRCDIR"]), prefix + files["ServerHeaderName"] + '.h'),
-        implementation = rpcImplementation,
-        externC_outro = externC_outro,
-        externC_intro = externC_intro,
-        prefix = prefix,
-        network_include = join(relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SRCDIR"]), prefix + 'network.h')
-        )
+        doNotModify=doNotModifyHeader,
+        rpc_client_header=join(
+            relpath(
+                files["CLIENT_SPCINCDIR"],
+                files["CLIENT_SRCDIR"]),
+            prefix +
+            files["ServerHeaderName"] +
+            '.h'),
+        implementation=rpcImplementation,
+        externC_outro=externC_outro,
+        externC_intro=externC_intro,
+        prefix=prefix,
+        network_include=join(
+            relpath(
+                files["CLIENT_GENINCDIR"],
+                files["CLIENT_SRCDIR"]),
+            prefix + 'network.h')
+    )
 
     xml = ET.ElementTree()
     xml._setroot(root)
 
     dir_name_content = []
-    dir_name_content.append(("CLIENT_SPCINCDIR", files["ServerHeaderName"] + ".h", getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderName"] + '_H', getTypeDeclarations(), join(relpath(files["CLIENT_GENINCDIR"], files["CLIENT_SPCINCDIR"]), "RPC_types.h"))))
-    #dir_name_content.append(("CLIENT_GENINCDIR", "types.h", getRpcTypesHeader()))
-    dir_name_content.append(("CLIENT_GENINCDIR", "network.h", getNetworkHeader()))
+    dir_name_content.append(("CLIENT_SPCINCDIR",
+                             files["ServerHeaderName"] + ".h",
+                             getRPC_serviceHeader(rpcHeader, prefix + files["ServerHeaderName"] + '_H',
+                                                  getTypeDeclarations(),
+                                                  join(relpath(files["CLIENT_GENINCDIR"],
+                                                               files["CLIENT_SPCINCDIR"]),
+                                                       "RPC_types.h"))))
+    dir_name_content.append(
+        ("CLIENT_GENINCDIR", "RPC_types.h", getRpcTypesHeader()))
+    dir_name_content.append(
+        ("CLIENT_GENINCDIR", "network.h", getNetworkHeader()))
     clientcode = "".join((
-            rpcImplementation,
-            answerSizeChecker,
-            answerParser,
-            getRPC_Parser_init(),
-            getRPC_Parser_exit(),
-            externC_outro),
-         )
-    dir_name_content.append(("CLIENT_SRCDIR", files["ServerHeaderName"] + ".c", clientcode))
+        rpcImplementation,
+        answerSizeChecker,
+        answerParser,
+        getRPC_Parser_init(),
+        getRPC_Parser_exit(),
+        externC_outro),
+    )
+    dir_name_content.append(
+        ("CLIENT_SRCDIR",
+         files["ServerHeaderName"] + ".c",
+         clientcode))
     """
         ("documentation", generateDocumentation(documentation, files["ServerHeaderFileName"])),
         ("style", getCss()),
     ]
     """
-    print("Writing client files relative to " + files["CLIENT_CONFIG_PATH"] + ":")
+    print("Writing client files relative to " +
+          files["CLIENT_CONFIG_PATH"] + ":")
     for dir, name, content in dir_name_content:
-        print("\t" + relpath(join(files[dir], prefix + name), files["CLIENT_CONFIG_PATH"]))
-        with open(join(files[dir], prefix + name), "w") as f: f.write(content)
-    with open(join(files["CLIENT_GENINCDIR"],  "RPC_types.h"), "w") as f: f.write(getRpcTypesHeader())		
+        filename = name if name.startswith("RPC_") else prefix + name
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files[dir],
+                    filename),
+                files["CLIENT_CONFIG_PATH"]))
+        with open(join(files[dir], filename), "w") as f:
+            f.write(content)
     if "CLIENT_DOCDIR" in files:
-        print("\t" + relpath(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), files["CLIENT_CONFIG_PATH"]))
-        with open(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), "w") as f: f.write(generateDocumentation(documentation, files["ServerHeaderName"]))
-        print("\t" + relpath(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), files["CLIENT_CONFIG_PATH"]))
-        with open(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f: f.write(getCss())
-        print("\t" + relpath(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), files["CLIENT_CONFIG_PATH"]))
-        xml.write(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files["CLIENT_DOCDIR"],
+                    prefix +
+                    files["ServerHeaderName"] +
+                    ".html"),
+                files["CLIENT_CONFIG_PATH"]))
+        with open(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), "w") as f:
+            f.write(
+                generateDocumentation(
+                    documentation,
+                    files["ServerHeaderName"],
+                    relpath(files["ServerHeader"], files["SERVER_CONFIG_PATH"])))
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files["CLIENT_DOCDIR"],
+                    prefix +
+                    files["ServerHeaderName"] +
+                    ".css"),
+                files["CLIENT_CONFIG_PATH"]))
+        with open(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f:
+            f.write(getCss())
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files["CLIENT_DOCDIR"],
+                    prefix +
+                    files["ServerHeaderName"] +
+                    ".xml"),
+                files["CLIENT_CONFIG_PATH"]))
+        xml.write(
+            join(
+                files["CLIENT_DOCDIR"],
+                prefix +
+                files["ServerHeaderName"] +
+                ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
+        try:
+            makedirs(join(files["CLIENT_DOCDIR"], projectname, prefix))
+        except:
+            pass
+        xml.write(
+            join(
+                files["CLIENT_DOCDIR"],
+                projectname,
+                prefix,
+                rawhash + ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
 
     dir_name_content = []
-    #dir_name_content.append(("SERVER_GENINCDIR", "types.h", getRpcTypesHeader()))
-    dir_name_content.append(("SERVER_GENINCDIR", "network.h", getNetworkHeader()))
-    dir_name_content.append(("SERVER_GENINCDIR", "parser.h", getRequestParserHeader()))
-    dir_name_content.append(("SERVER_SRCDIR", "parser.c", requestParserImplementation))
-    print("Writing server files relative to " + files["SERVER_CONFIG_PATH"] + ":")
+    dir_name_content.append(
+        ("SERVER_GENINCDIR", "RPC_types.h", getRpcTypesHeader()))
+    dir_name_content.append(
+        ("SERVER_GENINCDIR", "network.h", getNetworkHeader()))
+    dir_name_content.append(
+        ("SERVER_GENINCDIR",
+         "parser.h",
+         getRequestParserHeader()))
+    dir_name_content.append(
+        ("SERVER_SRCDIR", "parser.c", requestParserImplementation))
+    print("Writing server files relative to " +
+          files["SERVER_CONFIG_PATH"] + ":")
     for dir, name, content in dir_name_content:
-        print("\t" + relpath(join(files[dir], prefix + name), files["SERVER_CONFIG_PATH"]))
-        with open(join(files[dir], prefix + name), "w") as f: f.write(content)
-    with open(join(files["SERVER_GENINCDIR"],  "RPC_types.h"), "w") as f: f.write(getRpcTypesHeader())
+        filename = name if name.startswith("RPC_") else prefix + name
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files[dir],
+                    filename),
+                files["SERVER_CONFIG_PATH"]))
+        with open(join(files[dir], filename), "w") as f:
+            f.write(content)
     if "SERVER_DOCDIR" in files:
-        print("\t" + relpath(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), files["SERVER_CONFIG_PATH"]))
-        with open(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), "w") as f: f.write(generateDocumentation(documentation, files["ServerHeaderName"]))
-        print("\t" + relpath(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), files["SERVER_CONFIG_PATH"]))
-        with open(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f: f.write(getCss())
-        print("\t" + relpath(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), files["SERVER_CONFIG_PATH"]))
-        xml.write(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".xml"), encoding="UTF-8", xml_declaration = True)
-except SystemError:
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files["SERVER_DOCDIR"],
+                    prefix +
+                    files["ServerHeaderName"] +
+                    ".html"),
+                files["SERVER_CONFIG_PATH"]))
+        with open(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".html"), "w") as f:
+            f.write(
+                generateDocumentation(
+                    documentation,
+                    files["ServerHeaderName"],
+                    relpath(files["ServerHeader"], files["SERVER_CONFIG_PATH"])))
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files["SERVER_DOCDIR"],
+                    prefix +
+                    files["ServerHeaderName"] +
+                    ".css"),
+                files["SERVER_CONFIG_PATH"]))
+        with open(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f:
+            f.write(getCss())
+        print(
+            "\t" +
+            relpath(
+                join(
+                    files["SERVER_DOCDIR"],
+                    prefix +
+                    files["ServerHeaderName"] +
+                    ".xml"),
+                files["SERVER_CONFIG_PATH"]))
+        xml.write(
+            join(
+                files["SERVER_DOCDIR"],
+                prefix +
+                files["ServerHeaderName"] +
+                ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
+        try:
+            makedirs(join(files["SERVER_DOCDIR"], projectname, prefix))
+        except:
+            pass
+        xml.write(
+            join(
+                files["SERVER_DOCDIR"],
+                projectname,
+                prefix,
+                rawhash + ".xml"),
+            encoding="UTF-8",
+            xml_declaration=True)
+except:
     import traceback
-    traceback.print_exc(1)
+    traceback.print_exc(0)
     exit(-1)

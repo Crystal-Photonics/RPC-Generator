@@ -23,14 +23,14 @@ int main(){
 						socket->receiveData(&c, 1);
 						buffer.push_back(c);
 						switch (RPC_UART_get_request_size(buffer.data(), buffer.size()).result){
-							case RPC_UART_COMMAND_INCOMPLETE:
+							case RPC_COMMAND_INCOMPLETE:
 								continue;
-							case RPC_UART_COMMAND_UNKNOWN:
+							case RPC_COMMAND_UNKNOWN:
 								std::cout << "unknown command received: " << std::string(std::begin(buffer), std::end(buffer)) << '\n';
 								std::cout << "dropping " << buffer.size() << " bytes of data\n";
 								buffer.clear();
 								continue;
-							case RPC_UART_SUCCESS:
+							case RPC_SUCCESS:
 								break;
 							default:
 								throw std::runtime_error("unknown result from RPC_get_request_size: " + std::to_string(RPC_UART_get_request_size(buffer.data(), buffer.size()).result));
