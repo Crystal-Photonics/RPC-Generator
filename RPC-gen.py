@@ -3,6 +3,8 @@ from os import makedirs
 
 import CppHeaderParser
 
+multiThreadArchicture=True
+
 datatypes = {}
 datatypeDeclarations = []
 defines = {}
@@ -20,7 +22,6 @@ version_number = 0
 functionIgnoreList = []
 functionNoAnswerList = []
 functionPredefinedIDs = {}
-
 
 def evaluatePragmas(pragmas):
     for p in pragmas:
@@ -129,6 +130,14 @@ def getFilePaths():
 
     chdir(split(clientconfigpath)[0])
     retval["CLIENT_CONFIG_PATH"] = split(clientconfigpath)[0]
+    if "USE_SINGLE_TASK_ARCH" in clientconfig["configuration"]:
+       # print("USE_SINGLE_TASK_ARCH")
+        #print(clientconfig["configuration"]['USE_SINGLE_TASK_ARCH']);
+        if (clientconfig["configuration"]['USE_SINGLE_TASK_ARCH'].lower() == "true"):
+            print("using single thread in client")
+            global multiThreadArchicture
+            multiThreadArchicture=False
+            
     if "DOCDIR" in clientconfig["configuration"]:
         makedirs(clientconfig["configuration"]['DOCDIR'], exist_ok=True)
         retval[
@@ -805,8 +814,15 @@ class Function:
         )
 
     def getDefinition(self):
+        
+      #          if (multiThreadArchicture):
+     #       result = """
+
+
+
         if self.name in functionNoAnswerList:
-            return """
+            if (multiThreadArchicture):
+                result = """
 RPC_RESULT {functionname}({parameterdeclaration}){{
 	RPC_RESULT result;
 	{prefix}mutex_lock(RPC_mutex_caller);
@@ -824,7 +840,24 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 	{prefix}mutex_unlock(RPC_mutex_caller);
 	return result;
 }}
-""".format(
+"""
+            else:
+                result = """
+RPC_RESULT {functionname}({parameterdeclaration}){{
+	RPC_RESULT result;
+
+	/***Serializing***/
+	{prefix}message_start({messagesize});
+	{prefix}message_push_byte({requestID}); /* save ID */
+{inputParameterSerializationCode}
+	result = {prefix}message_commit();
+
+	/* This function has been set to receive no answer */
+
+	return result;
+}}
+"""         
+            result = result.format(
                 requestID=self.ID * 2,
                 inputParameterSerializationCode="".join(
                     p["parameter"].stringify(
@@ -836,7 +869,11 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
                 messagesize=sum(p["parameter"].getSize() for p in self.parameterlist if p[
                                 "parameter"].isInput()) + 1,
             )
-        return """
+            return result
+        
+        result = "";
+        if (multiThreadArchicture):
+            result = """
 RPC_RESULT {functionname}({parameterdeclaration}){{
 	{prefix}mutex_lock(RPC_mutex_caller);
 
@@ -879,7 +916,39 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 	}}
 	/* assert_dead_code; */
 }}
-""".format(
+"""
+        else:
+            result = """
+RPC_RESULT {functionname}({parameterdeclaration}){{
+
+
+	for (;;){{
+
+		/***Serializing***/
+		{prefix}message_start({messagesize});
+		{prefix}message_push_byte({requestID}); /* save ID */
+{inputParameterSerializationCode}
+		if ({prefix}message_commit() == RPC_SUCCESS){{ /* successfully sent request */
+			if ({prefix}mutex_lock_timeout(RPC_mutex_answer)){{ /* Wait for answer to arrive */
+				if (*{prefix}buffer++ != {answerID}){{ /* We got an incorrect answer */
+					continue; /* Try if next answer is correct */
+				}}
+				/***Deserializing***/
+{outputParameterDeserialization}
+				return RPC_SUCCESS;
+			}}
+			else {{ /* We failed to get an answer due to timeout */
+				return RPC_FAILURE;
+			}}
+		}}
+		else {{ /* Sending request failed */
+			return RPC_FAILURE;
+		}}
+	}}
+	/* assert_dead_code; */
+}}
+"""
+        result = result.format(
             requestID=self.ID * 2,
             answerID=self.ID * 2 + 1,
             inputParameterSerializationCode="".join(
@@ -897,6 +966,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
             messagesize=sum(p["parameter"].getSize() for p in self.parameterlist if p[
                             "parameter"].isInput()) + 1,
         )
+        return result;
 
     def getDeclaration(self):
         return "RPC_RESULT {}({});".format(
@@ -1599,13 +1669,15 @@ void {prefix}parse_request(const void *buffer, size_t size_bytes){{
 
 
 def getAnswerParser(functions):
-    return """
+    result = """
 /* This function pushes the answers to the caller, doing all the necessary synchronization. */
 void {prefix}parse_answer(const void *buffer, size_t size_bytes){{
 	{prefix}buffer = (const unsigned char *)buffer;
 	assert({prefix}get_answer_length(buffer, size_bytes).result == RPC_SUCCESS);
 	assert({prefix}get_answer_length(buffer, size_bytes).size <= size_bytes);
-
+""".format(prefix=prefix)
+    if(multiThreadArchicture):
+        result += """
 	{prefix}mutex_unlock(RPC_mutex_answer);
 	{prefix}mutex_lock(RPC_mutex_in_caller);
 	{prefix}mutex_unlock(RPC_mutex_parsing_complete);
@@ -1613,11 +1685,19 @@ void {prefix}parse_answer(const void *buffer, size_t size_bytes){{
 	{prefix}mutex_lock(RPC_mutex_parsing_complete);
 	{prefix}mutex_unlock(RPC_mutex_in_caller);
 }}
-""".format(prefix=prefix)
+        """.format(prefix=prefix)
+    else:
+        result += """
+	{prefix}mutex_unlock(RPC_mutex_answer);
+}}
+        """.format(prefix=prefix)
+    return result
 
 
 def getRPC_Parser_init():
-    return """
+    if(multiThreadArchicture):
+        result = """
+    
 void {prefix}Parser_init(){{
 	if ({prefix}initialized)
 		return;
@@ -1625,11 +1705,23 @@ void {prefix}Parser_init(){{
 	{prefix}mutex_lock(RPC_mutex_parsing_complete);
 	{prefix}mutex_lock(RPC_mutex_answer);
 }}
-""".format(prefix=prefix)
+""" 
+    else:
+        result = """
+void {prefix}Parser_init(){{
+	if ({prefix}initialized)
+		return;
+	{prefix}initialized = 1;
+	{prefix}mutex_lock(RPC_mutex_answer);
+}}
+"""         
+    result = result.format(prefix=prefix)
+    return result;
 
 
 def getRPC_Parser_exit():
-    return """
+    if(multiThreadArchicture):
+        result = """
 void {prefix}Parser_exit(){{
 	if (!{prefix}initialized)
 		return;
@@ -1637,7 +1729,19 @@ void {prefix}Parser_exit(){{
 	{prefix}mutex_unlock(RPC_mutex_parsing_complete);
 	{prefix}mutex_unlock(RPC_mutex_answer);
 }}
-""".format(prefix=prefix)
+"""
+    else:
+        result = """
+void {prefix}Parser_exit(){{
+	if (!{prefix}initialized)
+		return;
+	{prefix}initialized = 0;
+	{prefix}mutex_unlock(RPC_mutex_answer);
+}}
+"""         
+    result = result.format(prefix=prefix)
+    return result;
+
 
 
 def getAnswerSizeChecker(functions):
