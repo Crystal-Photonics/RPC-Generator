@@ -1038,7 +1038,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
             outputParameterSerialization="".join(
                 p["parameter"].stringify(
                     p["parametername"],
-                    3) for p in self.parameterlist if p["parameter"].isOutput()),
+                    4) for p in self.parameterlist if p["parameter"].isOutput()),
             ID_plus_1=self.ID * 2 + 1,
             prefix=prefix,
             messagesize=sum(p["parameter"].getSize() for p in self.parameterlist if p[
