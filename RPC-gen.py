@@ -1011,12 +1011,15 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 		/***Read input parameters***/
 {inputParameterDeserialization}
 		/***Call function***/
+			{prefix}reply_cancelled = 0;
 			{functioncall}
-		/***send return value and output parameters***/
-			{prefix}message_start({messagesize});
-			{prefix}message_push_byte({ID_plus_1});
-			{outputParameterSerialization}
-			{prefix}message_commit();
+			if ({prefix}reply_cancelled == 0){{
+				/***send return value and output parameters***/
+				{prefix}message_start({messagesize});
+				{prefix}message_push_byte({ID_plus_1});
+					{outputParameterSerialization}
+				{prefix}message_commit();
+			}}
 		}}
 		break;""".format(
             ID=self.ID * 2,
@@ -1607,7 +1610,9 @@ def getSizeFunction(functions, clientHeader,
 #include "{parser_to_server_header_path}"
 
 #include <string.h>
+#include <stdint.h>
 
+uint8_t {prefix}reply_cancelled = 0;
 {hash}
 
 /* auto-generated implementation */
@@ -1615,6 +1620,11 @@ void {prefix}get_hash_impl(unsigned char hash_out[16], unsigned char start_comma
 	memcpy(hash_out, {prefix}HASH, 16);
 	*start_command_id_out = {prefix}START_COMMAND_ID;
 	*version_out = {prefix}VERSION;
+}}
+
+/* auto-generated implementation */
+void {prefix}cancel_reply(){{
+	{prefix}reply_cancelled = 1;
 }}
 
 /* Receives a pointer to a (partly) received message and it's size.
@@ -2200,6 +2210,11 @@ RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes);
 /* This function parses RPC requests, calls the original function and sends an
    answer. */
 void {prefix}parse_request(const void *buffer, size_t size_bytes);
+
+/* If the requested function calls {prefix}cancel_reply() the reply is suppressed
+and the client will probably timeout*/
+void {prefix}cancel_reply(void);
+
 {externC_outro}
 """.format(
         doNotModifyHeader=doNotModifyHeader,
