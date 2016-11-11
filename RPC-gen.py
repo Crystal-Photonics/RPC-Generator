@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 from os import makedirs
+from os import path as os_path
 
 import CppHeaderParser
 
@@ -1805,7 +1806,10 @@ def generateCode(file, xml, parser_to_network_path,
     for i in ast.includes:
         global currentFile
         path = getIncludeFilePath(i)
-        currentFile = path
+        #print(os_path.dirname(file))
+        #print(path)
+        path =  os_path.join(os_path.dirname(file),path)
+        #print(path)
         try:
             iast = CppHeaderParser.CppHeader(path)
             setTypes(iast)
