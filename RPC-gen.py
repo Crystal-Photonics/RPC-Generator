@@ -1795,6 +1795,23 @@ def getHashFunction():
         {'parameter': ArrayDatatype("1", getDatatype("uint16_t"), "version_out", Out=True), 'parametername': "version_out"}])
 
 
+def recurseThroughIncludes(rootfile, st_includes, depth):
+
+    for i in st_includes.includes:
+        #global currentFile
+        inclduefilePath = getIncludeFilePath(i)
+        #print(os_path.dirname(file))
+        #print(inclduefilePath)
+        inclduefilePath =  os_path.join(os_path.dirname(rootfile),inclduefilePath)
+        #print("including file(depth:"+str(depth)+"):"+ inclduefilePath)
+        try:
+            iast = CppHeaderParser.CppHeader(inclduefilePath)
+            setTypes(iast)
+            if depth < 10:
+                recurseThroughIncludes(inclduefilePath,iast,depth+1)
+        except FileNotFoundError:
+            print('Warning: #include file "{}" not found, skipping'.format(inclduefilePath))
+
 def generateCode(file, xml, parser_to_network_path,
                  parser_to_server_header_path):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
@@ -1802,19 +1819,8 @@ def generateCode(file, xml, parser_to_network_path,
     # return None
     # checkDefines(ast.defines)
     setPredefinedDataTypes()
-    # print(ast.includes)
-    for i in ast.includes:
-        global currentFile
-        path = getIncludeFilePath(i)
-        #print(os_path.dirname(file))
-        #print(path)
-        path =  os_path.join(os_path.dirname(file),path)
-        #print(path)
-        try:
-            iast = CppHeaderParser.CppHeader(path)
-            setTypes(iast)
-        except FileNotFoundError:
-            print('Warning: #include file "{}" not found, skipping'.format(path))
+    #print(ast.includes)
+    recurseThroughIncludes(file,ast,0)
     currentFile = file
     # evaluatePragmas(ast.pragmas)
     # print(ast.enums)
