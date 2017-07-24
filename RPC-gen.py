@@ -156,6 +156,26 @@ def getFilePaths():
         makedirs(clientconfig["configuration"][d], exist_ok=True)
         retval["CLIENT_" + d] = abspath(clientconfig["configuration"][d])
 
+    XMLDIR_suffix = ""
+    XMLDIR_suffix_num = 0;
+    
+    if "CLIENT_DOCDIR" in retval:
+        retval["CLIENT_XMLDIR"] = [retval["CLIENT_DOCDIR"]]
+    else :
+        retval["CLIENT_XMLDIR"] = []
+    
+    if "XMLDIR"+XMLDIR_suffix not in clientconfig["configuration"]:
+        XMLDIR_suffix = "1"
+	
+    while "XMLDIR"+XMLDIR_suffix in clientconfig["configuration"]:
+        path = clientconfig["configuration"]["XMLDIR"+XMLDIR_suffix]
+        print("creating path client:"+path)		
+        makedirs(path, exist_ok=True)
+        retval["CLIENT_XMLDIR"].append(path)
+        XMLDIR_suffix_num = XMLDIR_suffix_num+1
+        XMLDIR_suffix = str(XMLDIR_suffix_num)
+    #print(retval["CLIENT_" +"XMLDIR_suffix"])		
+	
     # check server config for validity
     serverconfig = ConfigParser()
     serverconfig.read(serverconfigpath)
@@ -174,8 +194,7 @@ def getFilePaths():
     currentFile = retval["ServerHeader"]
 
     if "INCLUDE_INTO_TYPES" in clientconfig["configuration"]:
-        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig[
-            "configuration"]["INCLUDE_INTO_TYPES"]
+        retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = clientconfig["configuration"]["INCLUDE_INTO_TYPES"]
     else:
         retval["EXTRA_INCLUDE_INTO_CLIENT_TYPES_H"] = ""
 
@@ -196,6 +215,26 @@ def getFilePaths():
         makedirs(serverconfig["configuration"][d], exist_ok=True)
         retval["SERVER_" + d] = abspath(serverconfig["configuration"][d])
 
+    XMLDIR_suffix = ""
+    XMLDIR_suffix_num = 0;
+    if "SERVER_DOCDIR" in retval:
+        retval["SERVER_XMLDIR"] = [retval["SERVER_DOCDIR"]]
+    else:
+        retval["SERVER_XMLDIR"] = []
+		
+    if "XMLDIR"+XMLDIR_suffix not in serverconfig["configuration"]:
+        XMLDIR_suffix = "1"		
+		
+    while "XMLDIR"+XMLDIR_suffix in serverconfig["configuration"]:
+        path = serverconfig["configuration"]["XMLDIR"+XMLDIR_suffix]
+        print("creatint path server:"+ path)		
+        makedirs(path, exist_ok=True)
+        retval["SERVER_XMLDIR"].append(path)
+        XMLDIR_suffix_num = XMLDIR_suffix_num+1
+        XMLDIR_suffix = str(XMLDIR_suffix_num)
+		
+    #print(retval["SERVER_XMLDIR"])		
+	
     global hashstring
     global rawhash
     from sys import argv
@@ -2400,35 +2439,54 @@ static char {prefix}initialized;
                 files["CLIENT_CONFIG_PATH"]))
         with open(join(files["CLIENT_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f:
             f.write(getCss())
-        print(
-            "\t" +
-            relpath(
-                join(
-                    files["CLIENT_DOCDIR"],
-                    prefix +
-                    files["ServerHeaderName"] +
-                    ".xml"),
-                files["CLIENT_CONFIG_PATH"]))
-        xml.write(
-            join(
-                files["CLIENT_DOCDIR"],
-                prefix +
-                files["ServerHeaderName"] +
-                ".xml"),
-            encoding="UTF-8",
-            xml_declaration=True)
+
+
+		
+        for path in files["CLIENT_XMLDIR"]:
+            #print(
+			#	"\t" +
+			#	relpath(
+			#		join(
+			#			path,
+			#			prefix +
+			#			files["ServerHeaderName"] +
+			#			".xml"),
+			#		files["CLIENT_CONFIG_PATH"]))
+					
+            xml_path = join(
+					path,
+					prefix +
+					files["ServerHeaderName"] +
+					".xml")
+					
+            print("client descriptive xml: "+xml_path)
+            xml.write(
+				xml_path,
+				encoding="UTF-8",
+				xml_declaration=True)
         try:
             makedirs(join(files["CLIENT_DOCDIR"], projectname, prefix))
         except:
             pass
-        xml.write(
-            join(
-                files["CLIENT_DOCDIR"],
-                projectname,
-                prefix,
-                rawhash + ".xml"),
-            encoding="UTF-8",
-            xml_declaration=True)
+			
+        for path in files["CLIENT_XMLDIR"]:
+            xml_path = join(
+					path,
+					projectname,
+					prefix,
+					rawhash + ".xml")
+            try:
+                makedirs(join(path, projectname, prefix))
+            except:
+                pass
+				
+            print("client rawhash xml: "+xml_path)
+			
+            xml.write(
+				xml_path,
+				encoding="UTF-8",
+				xml_declaration=True)
+
 
     dir_name_content = []
     dir_name_content.append(
@@ -2481,35 +2539,44 @@ static char {prefix}initialized;
                 files["SERVER_CONFIG_PATH"]))
         with open(join(files["SERVER_DOCDIR"], prefix + files["ServerHeaderName"] + ".css"), "w") as f:
             f.write(getCss())
-        print(
-            "\t" +
-            relpath(
-                join(
-                    files["SERVER_DOCDIR"],
-                    prefix +
-                    files["ServerHeaderName"] +
-                    ".xml"),
-                files["SERVER_CONFIG_PATH"]))
-        xml.write(
-            join(
-                files["SERVER_DOCDIR"],
-                prefix +
-                files["ServerHeaderName"] +
-                ".xml"),
-            encoding="UTF-8",
-            xml_declaration=True)
-        try:
-            makedirs(join(files["SERVER_DOCDIR"], projectname, prefix))
-        except:
-            pass
-        xml.write(
-            join(
-                files["SERVER_DOCDIR"],
-                projectname,
-                prefix,
-                rawhash + ".xml"),
-            encoding="UTF-8",
-            xml_declaration=True)
+        for path in files["SERVER_XMLDIR"]:
+		
+            #print(
+			#	"\t" +
+			#	relpath(
+			#		join(
+			#			path,
+			#			prefix +
+			#			files["ServerHeaderName"] +
+			#			".xml"),
+			#		files["SERVER_CONFIG_PATH"]))
+            xml_path = join(
+					path,
+					prefix +
+					files["ServerHeaderName"] +
+					".xml")
+            print("server descriptive xml: "+xml_path)
+            xml.write(
+				xml_path,
+				encoding="UTF-8",
+				xml_declaration=True)
+
+			
+        for path in files["SERVER_XMLDIR"]:
+            xml_path = join(
+					path,
+					projectname,
+					prefix,
+					rawhash + ".xml")
+            try:
+                makedirs(join(path, projectname, prefix))
+            except:
+                pass
+            print("server rawhash xml: "+ xml_path)
+            xml.write(
+				xml_path,
+				encoding="UTF-8",
+				xml_declaration=True)
 except:
     import traceback
     traceback.print_exc(0)
