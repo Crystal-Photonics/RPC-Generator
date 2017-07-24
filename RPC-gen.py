@@ -1144,8 +1144,10 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         pos = BytePositionCounter(start=1)
 
         def getPredefinedData(name):
-            if name == "hash_out":
+            if name == "hash_inout":
                 return '"' + rawhash + '"'
+            elif name == "hash_index_inout":
+                return str(0)				
             elif name == "start_command_id_out":
                 return str(start_command_id)
             elif name == "version_out":
@@ -1617,8 +1619,16 @@ uint8_t {prefix}reply_cancelled = 0;
 {hash}
 
 /* auto-generated implementation */
-void {prefix}get_hash_impl(unsigned char hash_out[16], unsigned char start_command_id_out[1], uint16_t version_out[1]){{
-	memcpy(hash_out, {prefix}HASH, 16);
+void {prefix}get_hash_impl(unsigned char hash_inout[16], uint32_t hash_index_inout[1], unsigned char start_command_id_out[1], uint16_t version_out[1]){{
+	//For future use: the client's hash is in hash_inout and can be processed.
+	//For now it is just a placeholder for keeping the protocol compatible once this feature is needed.
+	//But this should be done in the generator since this is generated code.
+	
+	//Hash index is used in case the client holds multiple protocol descriptions. The client
+	//can use the index value to iterate.
+	
+	memcpy(hash_inout, {prefix}HASH, 16);
+	*hash_index_inout = 0;
 	*start_command_id_out = {prefix}START_COMMAND_ID;
 	*version_out = {prefix}VERSION;
 }}
@@ -1781,18 +1791,44 @@ RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes)
 
 
 def getHashFunction():
-    return Function(0, getDatatype("void"), prefix + "get_hash", [
-        {'parameter': ArrayDatatype("16",
-                                    getDatatype("unsigned char"),
-                                    "hash_out",
-                                    Out=True),
-            'parametername': "hash_out"},
-        {'parameter': ArrayDatatype("1",
-                                    getDatatype("unsigned char"),
-                                    "start_command_id_out",
-                                    Out=True),
-            'parametername': "start_command_id_out"},
-        {'parameter': ArrayDatatype("1", getDatatype("uint16_t"), "version_out", Out=True), 'parametername': "version_out"}])
+    return Function(0, getDatatype("void"), prefix + "get_hash", 
+			[
+				{
+					'parameter': 		ArrayDatatype(	"16",
+														getDatatype("unsigned char"),
+														"hash_inout",
+														Out=True,
+														In=True
+													),
+					'parametername': 	"hash_inout"
+				},
+				{
+					'parameter': 		ArrayDatatype(	"1",
+														getDatatype("uint32_t"),
+														"hash_index_inout", 
+														Out=True,
+														In=True
+													), 
+					'parametername':	"hash_index_inout"
+				},
+				{
+					'parameter': 		ArrayDatatype(	"1",
+														getDatatype("unsigned char"),
+														"start_command_id_out",
+														Out=True
+													),
+					'parametername': 	"start_command_id_out"
+				},
+				{
+					'parameter': 		ArrayDatatype(	"1",
+														getDatatype("uint16_t"),
+														"version_out", 
+														Out=True
+													), 
+					'parametername':	"version_out"
+				}
+			]
+		)
 
 
 def recurseThroughIncludes(rootfile, st_includes, depth):
