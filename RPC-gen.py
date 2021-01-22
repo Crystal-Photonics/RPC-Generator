@@ -155,7 +155,11 @@ def getFilePaths():
             clientconfigpath + "\": No " + d + " specified. Abort."
         makedirs(clientconfig["configuration"][d], exist_ok=True)
         retval["CLIENT_" + d] = abspath(clientconfig["configuration"][d])
-
+    if "CLIENT_FUNCTION_PREFIX" in clientconfig["configuration"]:
+        retval["CLIENT_FUNCTION_PREFIX"] = clientconfig["configuration"]["CLIENT_FUNCTION_PREFIX"]
+    else:
+        retval["CLIENT_FUNCTION_PREFIX"] = ""
+		
     XMLDIR_suffix = ""
     XMLDIR_suffix_num = 0;
     
@@ -853,7 +857,7 @@ class Function:
             parameterlist=", ".join(p["parametername"] for p in parameterlist),
         )
 
-    def getDefinition(self):
+    def getDefinition(self,client_function_prefix):
         
       #          if (multiThreadArchicture):
      #       result = """
@@ -914,7 +918,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         result = "";
         if (multiThreadArchicture):
             result = """
-RPC_RESULT {functionname}({parameterdeclaration}){{
+RPC_RESULT {client_function_prefix}{functionname}({parameterdeclaration}){{
 	{prefix}mutex_lock(RPC_mutex_caller);
 
 	for (;;){{
@@ -959,7 +963,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 """
         else:
             result = """
-RPC_RESULT {functionname}({parameterdeclaration}){{
+RPC_RESULT {client_function_prefix}{functionname}({parameterdeclaration}){{
 
 
 	for (;;){{
@@ -996,6 +1000,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
                     p["parametername"],
                     2) for p in self.parameterlist if p["parameter"].isInput()),
             functionname=self.name,
+			client_function_prefix = client_function_prefix,
             parameterdeclaration=self.getParameterDeclaration(),
             outputParameterDeserialization="".join(
                 p["parameter"].unstringify(
@@ -1888,7 +1893,7 @@ def recurseThroughIncludes(rootfile, st_includes, depth):
             print('Warning: #include file "{}" not found, skipping'.format(inclduefilePath))
 
 def generateCode(file, xml, parser_to_network_path,
-                 parser_to_server_header_path):
+                 parser_to_server_header_path, client_function_prefix):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
     # return None
@@ -1920,7 +1925,7 @@ def generateCode(file, xml, parser_to_network_path,
         if not f["name"] in functionIgnoreList:
             functionlist.append(getFunction(f))
     rpcHeader = "\n".join(f.getDeclaration() for f in functionlist)
-    rpcImplementation = "\n".join(f.getDefinition() for f in functionlist)
+    rpcImplementation = "\n".join(f.getDefinition(client_function_prefix) for f in functionlist)
     documentation = ""
     for f in functionlist:
         if f.name in functionIgnoreList:
@@ -2323,7 +2328,7 @@ try:
         generateCode(
             files["ServerHeader"], root, relpath(
                 files["SERVER_GENINCDIR"], files["SERVER_SRCDIR"]), relpath(
-                files["ServerHeader"], files["SERVER_SRCDIR"]))
+                files["ServerHeader"], files["SERVER_SRCDIR"]),files["CLIENT_FUNCTION_PREFIX"])
 
     for function in functionPredefinedIDs:
         print(
