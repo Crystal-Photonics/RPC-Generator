@@ -858,7 +858,7 @@ class Function:
             parameterlist=", ".join(p["parametername"] for p in parameterlist),
         )
 
-    def getDefinition(self):
+    def getDefinition(self,client_function_prefix):
         
       #          if (multiThreadArchicture):
      #       result = """
@@ -1928,7 +1928,7 @@ def generateCode(file, xml, parser_to_network_path,
         if not f["name"] in functionIgnoreList:
             functionlist.append(getFunction(f, client_function_prefix))
     rpcHeader = "\n".join(f.getDeclaration() for f in functionlist)
-    rpcImplementation = "\n".join(f.getDefinition() for f in functionlist)
+    rpcImplementation = "\n".join(f.getDefinition(client_function_prefix) for f in functionlist)
     documentation = ""
     for f in functionlist:
         if f.name in functionIgnoreList:
