@@ -155,7 +155,11 @@ def getFilePaths():
             clientconfigpath + "\": No " + d + " specified. Abort."
         makedirs(clientconfig["configuration"][d], exist_ok=True)
         retval["CLIENT_" + d] = abspath(clientconfig["configuration"][d])
-
+    if "CLIENT_FUNCTION_PREFIX" in clientconfig["configuration"]:
+        retval["CLIENT_FUNCTION_PREFIX"] = clientconfig["configuration"]["CLIENT_FUNCTION_PREFIX"]
+    else:
+        retval["CLIENT_FUNCTION_PREFIX"] = ""
+		
     XMLDIR_suffix = ""
     XMLDIR_suffix_num = 0;
     
@@ -772,7 +776,7 @@ class Function:
     # assumes the send function has the signature (void *, size_t);
     # requests have even numbers, answers have odd numbers
 
-    def __init__(self, ID, returntype, name, parameterlist):
+    def __init__(self, ID, returntype, name, parameterlist, client_function_prefix):
         #print("ID:", ID)
         #print("returntype:", returntype)
         #print("name:", name)
@@ -788,6 +792,7 @@ class Function:
         self.parameterlist = parameterlist
         #print(10*'+' + '\n' + "".join(str(p) for p in parameterlist) + '\n' + 10*'-' + '\n')
         self.ID = ID
+        self.client_function_prefix = client_function_prefix
 
     def getXml(self, entry):
         if self.name in functionIgnoreList:
@@ -854,7 +859,7 @@ class Function:
             parameterlist=", ".join(p["parametername"] for p in parameterlist),
         )
 
-    def getDefinition(self):
+    def getDefinition(self,client_function_prefix):
         
       #          if (multiThreadArchicture):
      #       result = """
@@ -864,8 +869,9 @@ class Function:
         if self.name in functionNoAnswerList:
             if (multiThreadArchicture):
                 result = """
-RPC_RESULT {functionname}({parameterdeclaration}){{
+RPC_RESULT {client_function_prefix_}{functionname}({parameterdeclaration}){{
 	RPC_RESULT result;
+	assert({prefix}initialized);
 	{prefix}mutex_lock(RPC_mutex_caller);
 	{prefix}mutex_lock(RPC_mutex_in_caller);
 
@@ -884,7 +890,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 """
             else:
                 result = """
-RPC_RESULT {functionname}({parameterdeclaration}){{
+RPC_RESULT {client_function_prefix_}{functionname}({parameterdeclaration}){{
 	RPC_RESULT result;
 
 	/***Serializing***/
@@ -907,6 +913,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
                 functionname=self.name,
                 parameterdeclaration=self.getParameterDeclaration(),
                 prefix=prefix,
+                client_function_prefix_=self.client_function_prefix,
                 messagesize=sum(p["parameter"].getSize() for p in self.parameterlist if p[
                                 "parameter"].isInput()) + 1,
             )
@@ -915,7 +922,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         result = "";
         if (multiThreadArchicture):
             result = """
-RPC_RESULT {functionname}({parameterdeclaration}){{
+RPC_RESULT {client_function_prefix_}{functionname}({parameterdeclaration}){{
+	assert({prefix}initialized);
 	{prefix}mutex_lock(RPC_mutex_caller);
 
 	for (;;){{
@@ -960,8 +968,8 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
 """
         else:
             result = """
-RPC_RESULT {functionname}({parameterdeclaration}){{
-
+RPC_RESULT {client_function_prefix_}{functionname}({parameterdeclaration}){{
+	assert({prefix}initialized);
 
 	for (;;){{
 
@@ -997,6 +1005,7 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
                     p["parametername"],
                     2) for p in self.parameterlist if p["parameter"].isInput()),
             functionname=self.name,
+			client_function_prefix_ = self.client_function_prefix,
             parameterdeclaration=self.getParameterDeclaration(),
             outputParameterDeserialization="".join(
                 p["parameter"].unstringify(
@@ -1010,8 +1019,9 @@ RPC_RESULT {functionname}({parameterdeclaration}){{
         return result;
 
     def getDeclaration(self):
-        return "RPC_RESULT {}({});".format(
+        return "RPC_RESULT {}{}({});".format(
             # prefix,
+            self.client_function_prefix,
             self.name,
             self.getParameterDeclaration(),
         )
@@ -1546,7 +1556,7 @@ def getFunctionParameterList(parameters):
     return paramlist
 
 
-def getFunction(function):
+def getFunction(function, client_function_prefix):
     functionList = []
     name = function["name"]
     ID = functionPredefinedIDs.pop(name, None)
@@ -1561,7 +1571,7 @@ def getFunction(function):
         ID = getFunction.functionID
     returntype = getFunctionReturnType(function)
     parameterlist = getFunctionParameterList(function["parameters"])
-    return Function(ID, returntype, name, parameterlist)
+    return Function(ID, returntype, name, parameterlist, client_function_prefix)
     # for k in function.keys():
     #print(k, '=', function[k])
     # for k in function["parameters"][0]["method"].keys():
@@ -1683,6 +1693,7 @@ void {prefix}cancel_reply(){{
    size that the message is supposed to have. If result equals RPC_COMMAND_INCOMPLETE
    then more bytes are required to determine the size of the message. In this case
    size is the expected number of bytes required to determine the correct size.*/
+   
 RPC_SIZE_RESULT {prefix}get_request_size(const void *buffer, size_t size_bytes){{
 	const unsigned char *current = (const unsigned char *)buffer;
 	RPC_SIZE_RESULT returnvalue;
@@ -1733,6 +1744,7 @@ def getAnswerParser(functions):
     result = """
 /* This function pushes the answers to the caller, doing all the necessary synchronization. */
 void {prefix}parse_answer(const void *buffer, size_t size_bytes){{
+	assert({prefix}initialized);
 	{prefix}buffer = (const unsigned char *)buffer;
 	assert({prefix}get_answer_length(buffer, size_bytes).result == RPC_SUCCESS);
 	assert({prefix}get_answer_length(buffer, size_bytes).size <= size_bytes);
@@ -1760,6 +1772,7 @@ def getRPC_Parser_init():
         result = """
     
 void {prefix}Parser_init(){{
+	assert(!{prefix}initialized);
 	if ({prefix}initialized)
 		return;
 	{prefix}initialized = 1;
@@ -1770,6 +1783,7 @@ void {prefix}Parser_init(){{
     else:
         result = """
 void {prefix}Parser_init(){{
+	assert(!{prefix}initialized);
 	if ({prefix}initialized)
 		return;
 	{prefix}initialized = 1;
@@ -1784,6 +1798,7 @@ def getRPC_Parser_exit():
     if(multiThreadArchicture):
         result = """
 void {prefix}Parser_exit(){{
+	assert({prefix}initialized);
 	if (!{prefix}initialized)
 		return;
 	{prefix}initialized = 0;
@@ -1794,6 +1809,7 @@ void {prefix}Parser_exit(){{
     else:
         result = """
 void {prefix}Parser_exit(){{
+	assert({prefix}initialized);
 	if (!{prefix}initialized)
 		return;
 	{prefix}initialized = 0;
@@ -1808,6 +1824,7 @@ void {prefix}Parser_exit(){{
 def getAnswerSizeChecker(functions):
     return """/* Get (expected) size of (partial) answer. */
 RPC_SIZE_RESULT {prefix}get_answer_length(const void *buffer, size_t size_bytes){{
+	assert({prefix}initialized);
 	RPC_SIZE_RESULT returnvalue = {{RPC_SUCCESS, 0}};
 	const unsigned char *current = (const unsigned char *)buffer;
 	if (!size_bytes){{
@@ -1867,7 +1884,7 @@ def getHashFunction():
 													), 
 					'parametername':	"version_out"
 				}
-			]
+			], ""
 		)
 
 
@@ -1889,7 +1906,7 @@ def recurseThroughIncludes(rootfile, st_includes, depth):
             print('Warning: #include file "{}" not found, skipping'.format(inclduefilePath))
 
 def generateCode(file, xml, parser_to_network_path,
-                 parser_to_server_header_path):
+                 parser_to_server_header_path, client_function_prefix):
     #ast = CppHeaderParser.CppHeader("""typedef enum EnumTest{Test} EnumTest;""",  argType='string')
     ast = CppHeaderParser.CppHeader(file)
     # return None
@@ -1919,9 +1936,9 @@ def generateCode(file, xml, parser_to_network_path,
     functionlist = [getHashFunction()]
     for f in ast.functions:
         if not f["name"] in functionIgnoreList:
-            functionlist.append(getFunction(f))
+            functionlist.append(getFunction(f, client_function_prefix))
     rpcHeader = "\n".join(f.getDeclaration() for f in functionlist)
-    rpcImplementation = "\n".join(f.getDefinition() for f in functionlist)
+    rpcImplementation = "\n".join(f.getDefinition(client_function_prefix) for f in functionlist)
     documentation = ""
     for f in functionlist:
         if f.name in functionIgnoreList:
@@ -2324,7 +2341,7 @@ try:
         generateCode(
             files["ServerHeader"], root, relpath(
                 files["SERVER_GENINCDIR"], files["SERVER_SRCDIR"]), relpath(
-                files["ServerHeader"], files["SERVER_SRCDIR"]))
+                files["ServerHeader"], files["SERVER_SRCDIR"]),files["CLIENT_FUNCTION_PREFIX"])
 
     for function in functionPredefinedIDs:
         print(
