@@ -363,16 +363,16 @@ class IntegralDatatype(Datatype):
         elif number < 8:
             return "{0} >> {1}".format(identifier, 8 * number)
 
-    def orByte(number, identifier, source):
+    def orByte(number, identifier, signature, source):
         assert number < 8, "Do not know how to portably deal with integers bigger than 64 bit"
         if number == 0:
-            return "{0} |= {1}".format(identifier, source)
+            return "{0} |= ({1}){2}".format(identifier, signature, source)
         elif number < 2:
-            return "{0} |= {1} << {2}".format(identifier, source, 8 * number)
+            return "{0} |= ({1}){2} << {3}".format(identifier, signature, source, 8 * number)
         elif number < 4:
-            return "{0} |= {1} << {2}L".format(identifier, source, 8 * number)
+            return "{0} |= ({1}){2} << {3}L".format(identifier, signature, source, 8 * number)
         elif number < 8:
-            return "{0} |= {1} << {2}LL".format(identifier, source, 8 * number)
+            return "{0} |= ({1}){2} << {3}LL".format(identifier, signature, source, 8 * number)
     # use bitshift to prevent endianess problems
 
     def declaration(self, identifier):
@@ -417,6 +417,7 @@ class IntegralDatatype(Datatype):
                 IntegralDatatype.orByte(
                     i,
                     identifier,
+                    self.signature,
                     "(*" +
                     source +
                     "++)") +
