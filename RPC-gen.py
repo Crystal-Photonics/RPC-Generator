@@ -696,7 +696,11 @@ class StructDatatype(Datatype):
         self.lineNumber = lineNumber
 
     def setXml(self, xml):
-        xml.set("bits", str(self.getSize()))
+        xml.set("bytes", str(self.getSize()))
+        # Attention! former versions of the RPC generator had the fault that the attribute-name for the size was "bits" while the number wrongly represented the size in bytes.
+        # The Crystal Test Framework knows the bug and interprets the size of a struct as a byte number even if the attribute name is "bits"
+        # This means that if one decides to express the size in bits again you 
+        # MUST NOT NAME THE ATTRIBUTE "bits" but find another name for it.
         xml.set("ctype", self.signature)
         xml.set("type", "struct")
         memberpos = 1
